@@ -1,0 +1,17 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+*.log
+manual_records_log.csv
+
+# OS generated files
+.DS_Store
+Thumbs.db
