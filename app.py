@@ -25,7 +25,10 @@ from hydrology_analysis import (
     calculate_statistical_parameters,
     calculate_gumbel,
     calculate_log_pearson_3,
-    get_design_rainfall_summary
+    get_design_rainfall_summary,
+    calculate_weibull_ranking,
+    interpolate_weibull_value,
+    calculate_dependable_flow_and_rainfall
 )
 
 # Set page config
@@ -39,13 +42,41 @@ st.set_page_config(
 # Custom CSS styling
 st.markdown("""
 <style>
+    /* Global container styling */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    /* Box card container */
+    .custom-card {
+        background-color: #FFFFFF;
+        border: 1.5px solid #E2E8F0;
+        border-radius: 12px;
+        padding: 18px 22px;
+        margin-bottom: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .custom-card-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #1E3A8A;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
     /* Metric Card Styling */
     div[data-testid="stMetric"] {
-        background-color: #F8FAFC;
-        border: 1px solid #E2E8F0;
-        padding: 14px 18px;
+        background-color: #FFFFFF;
+        border: 1.5px solid #CBD5E1;
+        padding: 12px 16px;
         border-radius: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        transition: transform 0.15s ease-in-out;
+    }
+    div[data-testid="stMetric"]:hover {
+        border-color: #3B82F6;
+        transform: translateY(-2px);
     }
     div[data-testid="stMetricLabel"] {
         font-size: 0.85rem;
@@ -53,7 +84,7 @@ st.markdown("""
         color: #475569;
     }
     div[data-testid="stMetricValue"] {
-        font-size: 1.6rem;
+        font-size: 1.5rem;
         font-weight: 700;
         color: #1E3A8A;
     }
@@ -65,15 +96,28 @@ st.markdown("""
         padding: 0.5rem 1rem;
         transition: all 0.2s ease-in-out;
     }
-    /* Tab headers */
+    /* Tab headers with solid card boundaries */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 6px;
+        border-bottom: 2px solid #CBD5E1;
+        padding-bottom: 4px;
+        overflow-x: auto;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 44px;
-        border-radius: 6px;
+        height: 42px;
+        border-radius: 8px 8px 0 0;
         padding: 0 16px;
         font-weight: 600;
+        font-size: 0.9rem;
+        background-color: #F8FAFC;
+        color: #475569;
+        border: 1px solid #CBD5E1;
+        border-bottom: none;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #1E3A8A !important;
+        color: #FFFFFF !important;
+        border-color: #1E3A8A !important;
     }
     /* Section badge */
     .filter-badge {
@@ -351,16 +395,27 @@ hari_hujan_count = (valid_ch > 0).sum()
 hari_kering_count = (valid_ch == 0).sum()
 rusak_count = (filtered_df["Status"] == "RUSAK").sum()
 
-# Tampilkan Kartu KPI
-col_m1, col_m2, col_m3, col_m4, col_m5, col_m6 = st.columns(6)
-col_m1.metric("Total Curah Hujan", f"{total_ch:,.1f} mm")
-col_m2.metric("Rata-rata Harian", f"{mean_ch:,.2f} mm")
-col_m3.metric("CH Maksimum", f"{max_ch:,.1f} mm", help=f"Terjadi pada {max_info}")
-col_m4.metric("Hari Hujan (>0mm)", f"{hari_hujan_count:,}")
-col_m5.metric("Hari Kering (0mm)", f"{hari_kering_count:,}")
-col_m6.metric("Total Data Baris", f"{len(filtered_df):,}")
+# Tampilkan Kartu KPI dalam Kotak Rapi
+with st.container(border=True):
+    col_m1, col_m2, col_m3, col_m4, col_m5, col_m6 = st.columns(6)
+    col_m1.metric("Total Curah Hujan", f"{total_ch:,.1f} mm")
+    col_m2.metric("Rata-rata Harian", f"{mean_ch:,.2f} mm")
+    col_m3.metric("CH Maksimum", f"{max_ch:,.1f} mm", help=f"Terjadi pada {max_info}")
+    col_m4.metric("Hari Hujan (>0mm)", f"{hari_hujan_count:,}")
+    col_m5.metric("Hari Kering (0mm)", f"{hari_kering_count:,}")
+    col_m6.metric("Total Data Baris", f"{len(filtered_df):,}")
 
-st.markdown("<br>", unsafe_allow_html=True)
+# Banner Akses Cepat & Navigasi
+with st.container(border=True):
+    col_quick1, col_quick2 = st.columns([3, 1])
+    with col_quick1:
+        st.markdown(
+            "📌 **Navigasi Cepat**: "
+            "Untuk menambah/mengoreksi data pengamatan stasiun, silakan klik tab **✍️ Input Manual** (di baris depan). "
+            "Untuk analisis keandalan irigasi & air bersih, gunakan tab **💧 Debit Andalan (Weibull)**."
+        )
+    with col_quick2:
+        st.caption("✨ Tampilan Berkotak Rapi & Terstruktur")
 
 
 # ==============================================================================
@@ -404,6 +459,15 @@ for stn in selected_stations:
 cross_monthly_export = get_cross_station_monthly_matrix(df_for_matrices, months=months_in_filter)
 pmax_export = get_pmax_cross_matrix(df_for_matrices)
 
+# Hitung data Debit Andalan (Metode Weibull) untuk diekspor ke Excel
+weibull_export = calculate_dependable_flow_and_rainfall(
+    df=filtered_df,
+    station=None,
+    probabilities=(80, 85, 90, 95),
+    das_area_km2=50.0,
+    runoff_c=0.60
+)
+
 mat_stn = selected_stations[0] if selected_stations else "21b"
 mat_year = years_in_filter[0] if years_in_filter else 2020
 matrix_download = all_matrices_export.get((mat_stn, mat_year), None)
@@ -417,37 +481,40 @@ filter_info_dict = {
     "tahun_matriks": str(mat_year)
 }
 
-col_down1, col_down2, col_down_space = st.columns([2, 2, 4])
+with st.container(border=True):
+    st.markdown("##### 📥 Ekspor Laporan & Unduh Hasil Analisis (Excel & PDF)")
+    col_down1, col_down2, col_down_space = st.columns([2, 2, 3])
 
-with col_down1:
-    with st.spinner("Menyiapkan file Excel (seluruh data & matriks)..."):
-        excel_data = export_to_excel(
-            df=filtered_df,
-            summary_df=summary_table_df,
-            matrix_df=matrix_download,
-            filter_info=filter_info_dict,
-            all_matrices_dict=all_matrices_export,
-            cross_station_monthly=cross_monthly_export,
-            pmax_matrix=pmax_export
+    with col_down1:
+        with st.spinner("Menyiapkan file Excel (seluruh sheet lengkap & debit andalan)..."):
+            excel_data = export_to_excel(
+                df=filtered_df,
+                summary_df=summary_table_df,
+                matrix_df=matrix_download,
+                filter_info=filter_info_dict,
+                all_matrices_dict=all_matrices_export,
+                cross_station_monthly=cross_monthly_export,
+                pmax_matrix=pmax_export,
+                weibull_data=weibull_export
+            )
+        st.download_button(
+            label="📥 Download Hasil (Excel .xlsx)",
+            data=excel_data.getvalue(),
+            file_name=f"Curah_Hujan_Export_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
         )
-    st.download_button(
-        label="📥 Download Hasil (Excel .xlsx)",
-        data=excel_data.getvalue(),
-        file_name=f"Curah_Hujan_Export_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
 
-with col_down2:
-    with st.spinner("Menyiapkan laporan PDF..."):
-        pdf_data = export_to_pdf(filtered_df, summary_table_df, filter_info_dict)
-    st.download_button(
-        label="📄 Download Laporan (PDF .pdf)",
-        data=pdf_data.getvalue(),
-        file_name=f"Laporan_Curah_Hujan_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-        mime="application/pdf",
-        use_container_width=True
-    )
+    with col_down2:
+        with st.spinner("Menyiapkan laporan PDF..."):
+            pdf_data = export_to_pdf(filtered_df, summary_table_df, filter_info_dict)
+        st.download_button(
+            label="📄 Download Laporan (PDF .pdf)",
+            data=pdf_data.getvalue(),
+            file_name=f"Laporan_Curah_Hujan_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -455,139 +522,144 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ==============================================================================
 # TABS TAMPILAN DATA & VISUALISASI
 # ==============================================================================
-tab_table, tab_matrix, tab_charts, tab_summary, tab_hydro, tab_input = st.tabs([
-    "📋 Data Detail Harian",
-    "📅 Matriks Hidrologi Bulanan",
-    "📈 Grafik Visualisasi & Tren",
-    "📊 Ringkasan Statistik Per Stasiun",
-    "🌊 Analisis Frekuensi & Kala Ulang",
-    "✍️ Input Data Manual"
+tab_table, tab_input, tab_matrix, tab_weibull, tab_hydro, tab_charts, tab_summary = st.tabs([
+    "📋 Data Harian",
+    "✍️ Input Manual",
+    "📅 Matriks Bulanan",
+    "💧 Debit Andalan (Weibull)",
+    "🌊 Kala Ulang (Gumbel & LP3)",
+    "📈 Grafik & Tren",
+    "📊 Ringkasan Stasiun"
 ])
 
 # ----------------- TAB 1: DATA DETAIL -----------------
 with tab_table:
-    st.subheader("📋 Kategorisasi Data Curah Hujan")
-    
-    view_granularity = st.radio(
-        "Pilih Tingkat Kategorisasi:",
-        ["Detail Harian (Hari & Tanggal)", "Rekapitulasi Bulanan (Bulan & Tahun)", "Rekapitulasi Tahunan (Tahun)"],
-        horizontal=True
-    )
+    with st.container(border=True):
+        st.subheader("📋 Kategorisasi Data Curah Hujan")
+        view_granularity = st.radio(
+            "Pilih Tingkat Kategorisasi:",
+            ["Detail Harian (Hari & Tanggal)", "Rekapitulasi Bulanan (Bulan & Tahun)", "Rekapitulasi Tahunan (Tahun)"],
+            horizontal=True
+        )
 
     if view_granularity == "Detail Harian (Hari & Tanggal)":
         years_in_data = sorted(list(filtered_df["Tahun"].unique()))
-        col_t1, col_t2, col_t3 = st.columns([2, 1, 1])
-        with col_t1:
-            st.caption(f"Menampilkan {len(filtered_df):,} baris data terfilter. Dikategorisasikan per Stasiun, Tahun, Bulan, dan Hari.")
-        with col_t2:
-            tab_yr_filter = st.selectbox(
-                "Filter Tahun Tabel:",
-                ["Semua Tahun"] + [str(y) for y in years_in_data],
-                key="table_year_select"
+        with st.container(border=True):
+            col_t1, col_t2, col_t3 = st.columns([2, 1, 1])
+            with col_t1:
+                st.caption(f"Menampilkan {len(filtered_df):,} baris data terfilter. Dikategorisasikan per Stasiun, Tahun, Bulan, dan Hari.")
+            with col_t2:
+                tab_yr_filter = st.selectbox(
+                    "Filter Tahun Tabel:",
+                    ["Semua Tahun"] + [str(y) for y in years_in_data],
+                    key="table_year_select"
+                )
+            with col_t3:
+                search_kw = st.text_input("🔍 Cari kata kunci:", placeholder="Ketik tanggal, stasiun, dll...")
+
+            view_df = filtered_df.copy()
+            if tab_yr_filter != "Semua Tahun":
+                view_df = view_df[view_df["Tahun"] == int(tab_yr_filter)]
+
+            if search_kw:
+                mask = view_df.astype(str).apply(lambda row: row.str.contains(search_kw, case=False).any(), axis=1)
+                view_df = view_df[mask]
+
+            # Susun kolom rapi: Stasiun, Tahun, Bulan, Hari, Tanggal, Curah Hujan, Klasifikasi BMKG, Status
+            display_table = view_df[["Stasiun", "Tahun", "Nama_Bulan", "Hari", "Tanggal", "Curah_Hujan", "Kategori_BMKG", "Status"]].copy()
+            display_table["Tanggal"] = display_table["Tanggal"].dt.strftime("%Y-%m-%d")
+            display_table.rename(columns={
+                "Nama_Bulan": "Bulan",
+                "Curah_Hujan": "Curah Hujan (mm)",
+                "Kategori_BMKG": "Klasifikasi BMKG"
+            }, inplace=True)
+
+            st.dataframe(
+                display_table,
+                use_container_width=True,
+                height=480,
+                column_config={
+                    "Curah Hujan (mm)": st.column_config.NumberColumn(format="%.1f mm"),
+                    "Tanggal": st.column_config.DateColumn(format="YYYY-MM-DD")
+                }
             )
-        with col_t3:
-            search_kw = st.text_input("🔍 Cari kata kunci:", placeholder="Ketik tanggal, stasiun, dll...")
-
-        view_df = filtered_df.copy()
-        if tab_yr_filter != "Semua Tahun":
-            view_df = view_df[view_df["Tahun"] == int(tab_yr_filter)]
-
-        if search_kw:
-            mask = view_df.astype(str).apply(lambda row: row.str.contains(search_kw, case=False).any(), axis=1)
-            view_df = view_df[mask]
-
-        # Susun kolom rapi: Stasiun, Tahun, Bulan, Hari, Tanggal, Curah Hujan, Klasifikasi BMKG, Status
-        display_table = view_df[["Stasiun", "Tahun", "Nama_Bulan", "Hari", "Tanggal", "Curah_Hujan", "Kategori_BMKG", "Status"]].copy()
-        display_table["Tanggal"] = display_table["Tanggal"].dt.strftime("%Y-%m-%d")
-        display_table.rename(columns={
-            "Nama_Bulan": "Bulan",
-            "Curah_Hujan": "Curah Hujan (mm)",
-            "Kategori_BMKG": "Klasifikasi BMKG"
-        }, inplace=True)
-
-        st.dataframe(
-            display_table,
-            use_container_width=True,
-            height=480,
-            column_config={
-                "Curah Hujan (mm)": st.column_config.NumberColumn(format="%.1f mm"),
-                "Tanggal": st.column_config.DateColumn(format="YYYY-MM-DD")
-            }
-        )
 
     elif view_granularity == "Rekapitulasi Bulanan (Bulan & Tahun)":
-        st.caption("Data teragregasi per Stasiun, Tahun, dan Bulan (Total, Rata-rata, Nilai Maksimum, dan Jumlah Hari Hujan).")
-        m_agg = filtered_df.groupby(["Stasiun", "Tahun", "Bulan", "Nama_Bulan"]).agg(
-            Total_CH=("Curah_Hujan", "sum"),
-            Rata_Rata_CH=("Curah_Hujan", "mean"),
-            Maks_CH=("Curah_Hujan", "max"),
-            Hari_Hujan=("Curah_Hujan", lambda s: (s > 0).sum()),
-            Total_Hari=("Curah_Hujan", "count")
-        ).reset_index()
-        m_agg.sort_values(by=["Stasiun", "Tahun", "Bulan"], inplace=True)
-        m_agg.drop(columns=["Bulan"], inplace=True)
-        m_agg.rename(columns={
-            "Nama_Bulan": "Bulan",
-            "Total_CH": "Total CH (mm)",
-            "Rata_Rata_CH": "Rata-rata Harian (mm)",
-            "Maks_CH": "CH Maksimum (mm)",
-            "Hari_Hujan": "Jumlah Hari Hujan",
-            "Total_Hari": "Total Hari Pengamatan"
-        }, inplace=True)
-        st.dataframe(
-            m_agg,
-            use_container_width=True,
-            height=480,
-            column_config={
-                "Total CH (mm)": st.column_config.NumberColumn(format="%.1f mm"),
-                "Rata-rata Harian (mm)": st.column_config.NumberColumn(format="%.2f mm"),
-                "CH Maksimum (mm)": st.column_config.NumberColumn(format="%.1f mm"),
-            }
-        )
+        with st.container(border=True):
+            st.caption("Data teragregasi per Stasiun, Tahun, dan Bulan (Total, Rata-rata, Nilai Maksimum, dan Jumlah Hari Hujan).")
+            m_agg = filtered_df.groupby(["Stasiun", "Tahun", "Bulan", "Nama_Bulan"]).agg(
+                Total_CH=("Curah_Hujan", "sum"),
+                Rata_Rata_CH=("Curah_Hujan", "mean"),
+                Maks_CH=("Curah_Hujan", "max"),
+                Hari_Hujan=("Curah_Hujan", lambda s: (s > 0).sum()),
+                Total_Hari=("Curah_Hujan", "count")
+            ).reset_index()
+            m_agg.sort_values(by=["Stasiun", "Tahun", "Bulan"], inplace=True)
+            m_agg.drop(columns=["Bulan"], inplace=True)
+            m_agg.rename(columns={
+                "Nama_Bulan": "Bulan",
+                "Total_CH": "Total CH (mm)",
+                "Rata_Rata_CH": "Rata-rata Harian (mm)",
+                "Maks_CH": "CH Maksimum (mm)",
+                "Hari_Hujan": "Jumlah Hari Hujan",
+                "Total_Hari": "Total Hari Pengamatan"
+            }, inplace=True)
+            st.dataframe(
+                m_agg,
+                use_container_width=True,
+                height=480,
+                column_config={
+                    "Total CH (mm)": st.column_config.NumberColumn(format="%.1f mm"),
+                    "Rata-rata Harian (mm)": st.column_config.NumberColumn(format="%.2f mm"),
+                    "CH Maksimum (mm)": st.column_config.NumberColumn(format="%.1f mm"),
+                }
+            )
 
     else:
-        st.caption("Data teragregasi per Stasiun dan Tahun (Total CH Tahunan, Curah Hujan Harian Maksimum Tahunan Pmax, dan Hari Hujan).")
-        y_agg = filtered_df.groupby(["Stasiun", "Tahun"]).agg(
-            Total_CH=("Curah_Hujan", "sum"),
-            Rata_Rata_CH=("Curah_Hujan", "mean"),
-            Maks_CH=("Curah_Hujan", "max"),
-            Hari_Hujan=("Curah_Hujan", lambda s: (s > 0).sum()),
-            Total_Hari=("Curah_Hujan", "count")
-        ).reset_index()
-        y_agg.sort_values(by=["Stasiun", "Tahun"], inplace=True)
-        y_agg.rename(columns={
-            "Total_CH": "Total Curah Hujan Tahunan (mm)",
-            "Rata_Rata_CH": "Rata-rata Harian (mm)",
-            "Maks_CH": "CH Harian Maks Tahunan Pmax (mm)",
-            "Hari_Hujan": "Jumlah Hari Hujan",
-            "Total_Hari": "Total Hari Pengamatan"
-        }, inplace=True)
-        st.dataframe(
-            y_agg,
-            use_container_width=True,
-            height=480,
-            column_config={
-                "Total Curah Hujan Tahunan (mm)": st.column_config.NumberColumn(format="%.1f mm"),
-                "Rata-rata Harian (mm)": st.column_config.NumberColumn(format="%.2f mm"),
-                "CH Harian Maks Tahunan Pmax (mm)": st.column_config.NumberColumn(format="%.1f mm"),
-            }
-        )
+        with st.container(border=True):
+            st.caption("Data teragregasi per Stasiun dan Tahun (Total CH Tahunan, Curah Hujan Harian Maksimum Tahunan Pmax, dan Hari Hujan).")
+            y_agg = filtered_df.groupby(["Stasiun", "Tahun"]).agg(
+                Total_CH=("Curah_Hujan", "sum"),
+                Rata_Rata_CH=("Curah_Hujan", "mean"),
+                Maks_CH=("Curah_Hujan", "max"),
+                Hari_Hujan=("Curah_Hujan", lambda s: (s > 0).sum()),
+                Total_Hari=("Curah_Hujan", "count")
+            ).reset_index()
+            y_agg.sort_values(by=["Stasiun", "Tahun"], inplace=True)
+            y_agg.rename(columns={
+                "Total_CH": "Total Curah Hujan Tahunan (mm)",
+                "Rata_Rata_CH": "Rata-rata Harian (mm)",
+                "Maks_CH": "CH Harian Maks Tahunan Pmax (mm)",
+                "Hari_Hujan": "Jumlah Hari Hujan",
+                "Total_Hari": "Total Hari Pengamatan"
+            }, inplace=True)
+            st.dataframe(
+                y_agg,
+                use_container_width=True,
+                height=480,
+                column_config={
+                    "Total Curah Hujan Tahunan (mm)": st.column_config.NumberColumn(format="%.1f mm"),
+                    "Rata-rata Harian (mm)": st.column_config.NumberColumn(format="%.2f mm"),
+                    "CH Harian Maks Tahunan Pmax (mm)": st.column_config.NumberColumn(format="%.1f mm"),
+                }
+            )
 
-# ----------------- TAB 2: MATRIKS HIDROLOGI -----------------
+# ----------------- TAB: MATRIKS HIDROLOGI -----------------
 with tab_matrix:
-    st.subheader("📅 Format Matriks Hidrologi (Tabel Harian vs Bulan)")
-    st.caption("Format standar yang digunakan pada laporan hidrologi dan dinas PU/BBWS (Tanggal 1-31 vs Bulan Jan-Des beserta rekapitulasi JUMLAH, RATA-RATA, MAKSIMUM, dan HARI HUJAN).")
+    with st.container(border=True):
+        st.subheader("📅 Format Matriks Hidrologi (Tabel Harian vs Bulan)")
+        st.caption("Format standar yang digunakan pada laporan hidrologi dan dinas PU/BBWS (Tanggal 1-31 vs Bulan Jan-Des beserta rekapitulasi JUMLAH, RATA-RATA, MAKSIMUM, dan HARI HUJAN).")
 
-    matrix_view_mode = st.radio(
-        "Pilih Mode Tampilan Matriks:",
-        [
-            "Seluruh Matriks (Semua Stasiun & Semua Tahun Terpilih)",
-            "Matriks Rekap Bulanan Antar Stasiun (Stasiun vs Bulan)",
-            "Matriks Curah Hujan Harian Maksimum Tahunan (Pmax)",
-            "Tampilan Fokus 1 Matriks Tertentu"
-        ],
-        horizontal=True
-    )
+        matrix_view_mode = st.radio(
+            "Pilih Mode Tampilan Matriks:",
+            [
+                "Seluruh Matriks (Semua Stasiun & Semua Tahun Terpilih)",
+                "Matriks Rekap Bulanan Antar Stasiun (Stasiun vs Bulan)",
+                "Matriks Curah Hujan Harian Maksimum Tahunan (Pmax)",
+                "Tampilan Fokus 1 Matriks Tertentu"
+            ],
+            horizontal=True
+        )
 
     years_in_filter = sorted(list(filtered_df["Tahun"].unique()))
 
@@ -685,14 +757,15 @@ with tab_matrix:
                 st.info("Tidak ada data untuk kombinasi stasiun dan tahun tersebut.")
 
 # ----------------- TAB 3: GRAFIK VISUALISASI -----------------
+# ----------------- TAB: GRAFIK & TREN -----------------
 with tab_charts:
-    st.subheader("📈 Analisis Grafik Interaktif")
-
-    chart_type = st.radio(
-        "Pilih Jenis Grafik:",
-        ["Tren Curah Hujan Harian (Line)", "Total Curah Hujan Bulanan (Bar)", "Distribusi Intensitas BMKG (Donut)", "Perbandingan Akumulasi Stasiun (Bar)"],
-        horizontal=True
-    )
+    with st.container(border=True):
+        st.subheader("📈 Analisis Grafik Interaktif")
+        chart_type = st.radio(
+            "Pilih Jenis Grafik:",
+            ["Tren Curah Hujan Harian (Line)", "Total Curah Hujan Bulanan (Bar)", "Distribusi Intensitas BMKG (Donut)", "Perbandingan Akumulasi Stasiun (Bar)"],
+            horizontal=True
+        )
 
     if chart_type == "Tren Curah Hujan Harian (Line)":
         st.markdown("##### 🌊 Tren Curah Hujan Harian Per Stasiun")
@@ -783,33 +856,189 @@ with tab_charts:
         fig_stn.update_layout(height=max(450, len(stn_sum) * 20), template="plotly_white")
         st.plotly_chart(fig_stn, use_container_width=True)
 
-# ----------------- TAB 4: RINGKASAN STASIUN -----------------
+# ----------------- TAB: RINGKASAN STASIUN -----------------
 with tab_summary:
-    st.subheader("📊 Ringkasan Statistik Per Stasiun")
-    st.caption("Rangkuman statistik lengkap untuk setiap stasiun pengamatan berdasarkan periode waktu yang difilter.")
+    with st.container(border=True):
+        st.subheader("📊 Ringkasan Statistik Per Stasiun")
+        st.caption("Rangkuman statistik lengkap untuk setiap stasiun pengamatan berdasarkan periode waktu yang difilter.")
 
-    st.dataframe(
-        summary_table_df,
-        use_container_width=True,
-        column_config={
-            "Total Curah Hujan (mm)": st.column_config.NumberColumn(format="%.1f mm"),
-            "Rata-rata Harian (mm)": st.column_config.NumberColumn(format="%.2f mm"),
-            "Curah Hujan Maks (mm)": st.column_config.NumberColumn(format="%.1f mm"),
-            "Hari Hujan (>0 mm)": st.column_config.NumberColumn(format="%d hari"),
-            "Hari Kering (0 mm)": st.column_config.NumberColumn(format="%d hari"),
-            "Sensor Rusak": st.column_config.NumberColumn(format="%d hari"),
-            "Total Data Hari": st.column_config.NumberColumn(format="%d hari"),
-        }
+        st.dataframe(
+            summary_table_df,
+            use_container_width=True,
+            column_config={
+                "Total Curah Hujan (mm)": st.column_config.NumberColumn(format="%.1f mm"),
+                "Rata-rata Harian (mm)": st.column_config.NumberColumn(format="%.2f mm"),
+                "Curah Hujan Maks (mm)": st.column_config.NumberColumn(format="%.1f mm"),
+                "Hari Hujan (>0 mm)": st.column_config.NumberColumn(format="%d hari"),
+                "Hari Kering (0 mm)": st.column_config.NumberColumn(format="%d hari"),
+                "Sensor Rusak": st.column_config.NumberColumn(format="%d hari"),
+                "Total Data Hari": st.column_config.NumberColumn(format="%d hari"),
+            }
+        )
+
+# ----------------- TAB: DEBIT ANDALAN (METODE WEIBULL) -----------------
+with tab_weibull:
+    with st.container(border=True):
+        st.subheader("💧 Analisis Curah Hujan & Debit Andalan (Metode Weibull)")
+        st.caption(
+            "Perhitungan probabilitas terlampaui menggunakan rumus Weibull: "
+            "P = [m / (N + 1)] x 100% sesuai standar Ditjen SDA Kementerian PUPR & SNI Hidrologi. "
+            "Digunakan untuk perencanaan irigasi (R80 / Q80), air baku/PDAM (Q90), dan PLTA (Q85)."
+        )
+
+    # Box Pengaturan Parameter
+    with st.container(border=True):
+        st.markdown("##### ⚙️ Parameter Perhitungan & Karakteristik DAS")
+        col_w_stn, col_w_das, col_w_c, col_w_p = st.columns([2, 1.5, 1.5, 2])
+        with col_w_stn:
+            stn_w_options = ["Semua Stasiun (Rata-rata Kawasan)"] + selected_stations
+            selected_w_stn = st.selectbox("Stasiun Pengamatan:", stn_w_options, key="weibull_stn_choice")
+        with col_w_das:
+            das_area = st.number_input("Luas DAS (km²):", min_value=0.1, max_value=50000.0, value=50.0, step=5.0, format="%.1f",
+                                       help="Luas Daerah Aliran Sungai untuk konversi curah hujan menjadi debit.")
+        with col_w_c:
+            runoff_coef = st.number_input("Koefisien Aliran (C):", min_value=0.05, max_value=1.00, value=0.60, step=0.05, format="%.2f",
+                                          help="Koefisien pengaliran permukaan (0.3 - 0.5 perbukitan/hutan, 0.5 - 0.7 pertanian/campuran, 0.7 - 0.9 perkotaan).")
+        with col_w_p:
+            custom_prob = st.slider("Tingkat Keandalan Kustom (%):", min_value=50, max_value=99, value=80, step=1,
+                                    help="80% = Standar Irigasi Padi, 85% = Palawija/PLTA, 90% = Air Bersih/Baku.")
+
+    # Eksekusi Analisis Weibull
+    stn_query = None if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)" else selected_w_stn
+    all_target_probs = sorted(list(set([80, 85, 90, 95, int(custom_prob)])))
+    
+    weibull_results = calculate_dependable_flow_and_rainfall(
+        df=filtered_df,
+        station=stn_query,
+        probabilities=all_target_probs,
+        das_area_km2=das_area,
+        runoff_c=runoff_coef
     )
 
-# ----------------- TAB 5: ANALISIS HIDROLOGI & KALA ULANG -----------------
-with tab_hydro:
-    st.subheader("🌊 Analisis Frekuensi Hidrologi & Curah Hujan Rancangan (Kala Ulang)")
-    st.caption("Perhitungan curah hujan rancangan metode Gumbel dan Log Pearson Tipe III untuk kala ulang T = 2, 5, 10, 25, 50, dan 100 Tahun (Standar SNI & PU Perencanaan Bangunan Air/Drainase).")
+    if not weibull_results["summary"].empty:
+        w_sum = weibull_results["summary"]
+        
+        # Metric Highlight Cards (Kotak-kotak KPI)
+        annual_row_match = w_sum[w_sum["Bulan / Periode"] == "TOTAL TAHUNAN"]
+        if not annual_row_match.empty:
+            annual_row = annual_row_match.iloc[0]
+            with st.container(border=True):
+                col_wk1, col_wk2, col_wk3, col_wk4 = st.columns(4)
+                col_wk1.metric(f"Curah Hujan Andalan R80", f"{annual_row.get('R80 (mm)', 0):,.1f} mm", help="Keandalan 80% (Standar Irigasi)")
+                col_wk2.metric(f"Debit Andalan Q80", f"{annual_row.get('Q80 (m3/s)', 0):,.3f} m³/s", help=f"Setara {annual_row.get('Q80 (L/s)', 0):,.1f} L/detik")
+                col_wk3.metric(f"Curah Hujan Andalan R90", f"{annual_row.get('R90 (mm)', 0):,.1f} mm", help="Keandalan 90% (Standar Air Bersih)")
+                col_wk4.metric(f"Debit Andalan Q90", f"{annual_row.get('Q90 (m3/s)', 0):,.3f} m³/s", help=f"Setara {annual_row.get('Q90 (L/s)', 0):,.1f} L/detik")
 
-    col_h_stn, col_h_info = st.columns([2, 3])
-    with col_h_stn:
-        h_stn = st.selectbox("Pilih Stasiun untuk Dianalisis:", selected_stations, key="hydro_stn_select")
+        # Tabel Utama
+        with st.container(border=True):
+            st.markdown("##### 📋 Tabel Curah Hujan & Debit Andalan Bulanan (Metode Weibull)")
+            st.caption(f"Hasil perhitungan untuk **{selected_w_stn}** dengan Luas DAS = {das_area} km² dan C = {runoff_coef}")
+            
+            # Kolom konfigurasi format
+            w_col_config = {
+                "No": st.column_config.NumberColumn(format="%d"),
+                "Hari": st.column_config.NumberColumn(format="%d hari")
+            }
+            for p in all_target_probs:
+                w_col_config[f"R{p} (mm)"] = st.column_config.NumberColumn(format="%.1f mm")
+                w_col_config[f"Q{p} (m3/s)"] = st.column_config.NumberColumn(format="%.3f m³/s")
+                w_col_config[f"Q{p} (L/s)"] = st.column_config.NumberColumn(format="%.1f L/s")
+
+            st.dataframe(
+                w_sum,
+                use_container_width=True,
+                hide_index=True,
+                column_config=w_col_config
+            )
+
+        # Visualisasi Grafik
+        col_wg1, col_wg2 = st.columns(2)
+        with col_wg1:
+            with st.container(border=True):
+                st.markdown("##### 📊 Profil Debit Andalan Bulanan (Q80 & Q90)")
+                sub_months = w_sum[w_sum["Bulan / Periode"] != "TOTAL TAHUNAN"]
+                fig_w_bar = go.Figure()
+                fig_w_bar.add_trace(go.Bar(
+                    x=sub_months["Bulan / Periode"],
+                    y=sub_months["Q80 (m3/s)"],
+                    name="Q80 (Irigasi 80%)",
+                    marker_color="#1E3A8A"
+                ))
+                fig_w_bar.add_trace(go.Bar(
+                    x=sub_months["Bulan / Periode"],
+                    y=sub_months["Q90 (m3/s)"],
+                    name="Q90 (Air Bersih 90%)",
+                    marker_color="#0F766E"
+                ))
+                fig_w_bar.update_layout(
+                    height=360,
+                    template="plotly_white",
+                    barmode="group",
+                    xaxis_title="Bulan",
+                    yaxis_title="Debit (m³/detik)",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_w_bar, use_container_width=True)
+
+        with col_wg2:
+            with st.container(border=True):
+                st.markdown("##### 📈 Kurva Durasi Curah Hujan / Debit (Weibull Duration Curve)")
+                ann_rank = weibull_results["annual_ranking"]
+                if not ann_rank.empty:
+                    fig_w_curve = go.Figure()
+                    fig_w_curve.add_trace(go.Scatter(
+                        x=ann_rank["Probabilitas P (%)"],
+                        y=ann_rank["Nilai"],
+                        mode="lines+markers",
+                        name="Curah Hujan Tahunan",
+                        line=dict(color="#2563EB", width=2.5),
+                        marker=dict(size=7)
+                    ))
+                    fig_w_curve.add_vline(x=80, line_dash="dash", line_color="#DC2626", annotation_text="P=80% (Irigasi)")
+                    fig_w_curve.add_vline(x=90, line_dash="dot", line_color="#D97706", annotation_text="P=90% (Air Bersih)")
+                    fig_w_curve.update_layout(
+                        height=360,
+                        template="plotly_white",
+                        xaxis_title="Probabilitas Terlampaui P (%)",
+                        yaxis_title="Curah Hujan Tahunan (mm)",
+                        hovermode="x unified"
+                    )
+                    st.plotly_chart(fig_w_curve, use_container_width=True)
+                else:
+                    st.caption("Data belum cukup untuk membentuk kurva durasi.")
+
+        # Tabel Rincian Peringkat Weibull
+        with st.expander("🔍 Lihat Tabel Peringkat & Perhitungan Lengkap Rumus Weibull per Bulan / Tahunan"):
+            sel_m_inspect = st.selectbox(
+                "Pilih Periode untuk Memeriksa Urutan Data (Ranking m & P%):",
+                list(weibull_results["rankings"].keys()),
+                index=len(weibull_results["rankings"]) - 1
+            )
+            ranking_inspect_df = weibull_results["rankings"].get(sel_m_inspect, pd.DataFrame())
+            if not ranking_inspect_df.empty:
+                st.markdown(f"**Tabel Peringkat Periode: {sel_m_inspect} (Jumlah Data N = {len(ranking_inspect_df)})**")
+                st.dataframe(
+                    ranking_inspect_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Peringkat (m)": st.column_config.NumberColumn(format="%d"),
+                        "Nilai": st.column_config.NumberColumn("Curah Hujan (mm)", format="%.1f mm"),
+                        "Probabilitas P (%)": st.column_config.NumberColumn("Probabilitas P (%) = [m/(N+1)]*100", format="%.2f %%")
+                    }
+                )
+    else:
+        st.info("Data curah hujan tidak mencukupi untuk melakukan analisis Weibull.")
+
+# ----------------- TAB: ANALISIS HIDROLOGI & KALA ULANG -----------------
+with tab_hydro:
+    with st.container(border=True):
+        st.subheader("🌊 Analisis Frekuensi Hidrologi & Curah Hujan Rancangan (Kala Ulang)")
+        st.caption("Perhitungan curah hujan rancangan metode Gumbel dan Log Pearson Tipe III untuk kala ulang T = 2, 5, 10, 25, 50, dan 100 Tahun (Standar SNI & PU Perencanaan Bangunan Air/Drainase).")
+
+        col_h_stn, col_h_info = st.columns([2, 3])
+        with col_h_stn:
+            h_stn = st.selectbox("Pilih Stasiun untuk Dianalisis:", selected_stations, key="hydro_stn_select")
 
     if h_stn:
         sub_h = df_raw[(df_raw["Stasiun"] == h_stn) & (df_raw["Curah_Hujan"].notna())]
@@ -818,197 +1047,202 @@ with tab_hydro:
         
         if stats_p:
             # Metric cards
-            col_k1, col_k2, col_k3, col_k4, col_k5, col_k6 = st.columns(6)
-            col_k1.metric("Jumlah Tahun (n)", f"{stats_p['n']} Tahun")
-            col_k2.metric("Rata-rata Pmax (X)", f"{stats_p['mean']:.1f} mm")
-            col_k3.metric("Standar Deviasi (S)", f"{stats_p['std']:.2f} mm")
-            col_k4.metric("Koef. Variasi (Cv)", f"{stats_p['cv']:.3f}")
-            col_k5.metric("Koef. Skewness (Cs)", f"{stats_p['cs']:.3f}")
-            col_k6.metric("Koef. Kurtosis (Ck)", f"{stats_p['ck']:.3f}")
-
-            st.markdown("<br>", unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown("##### 📊 Parameter Statistik Distribusi Hidrologi")
+                col_k1, col_k2, col_k3, col_k4, col_k5, col_k6 = st.columns(6)
+                col_k1.metric("Jumlah Tahun (n)", f"{stats_p['n']} Tahun")
+                col_k2.metric("Rata-rata Pmax (X)", f"{stats_p['mean']:.1f} mm")
+                col_k3.metric("Standar Deviasi (S)", f"{stats_p['std']:.2f} mm")
+                col_k4.metric("Koef. Variasi (Cv)", f"{stats_p['cv']:.3f}")
+                col_k5.metric("Koef. Skewness (Cs)", f"{stats_p['cs']:.3f}")
+                col_k6.metric("Koef. Kurtosis (Ck)", f"{stats_p['ck']:.3f}")
 
             # Design rainfall table and chart
             col_r1, col_r2 = st.columns([3, 4])
             with col_r1:
-                st.markdown("##### 📋 Tabel Curah Hujan Rancangan (mm)")
-                design_df = get_design_rainfall_summary(df_raw, h_stn)
-                st.dataframe(design_df, use_container_width=True, hide_index=True)
+                with st.container(border=True):
+                    st.markdown("##### 📋 Tabel Curah Hujan Rancangan (mm)")
+                    design_df = get_design_rainfall_summary(df_raw, h_stn)
+                    st.dataframe(design_df, use_container_width=True, hide_index=True)
 
             with col_r2:
-                st.markdown("##### 📈 Kurva Pertumbuhan Curah Hujan Rancangan")
-                if not design_df.empty:
-                    fig_h = go.Figure()
-                    fig_h.add_trace(go.Scatter(
-                        x=design_df["Kala Ulang (T)"],
-                        y=design_df["Gumbel (mm)"],
-                        mode="lines+markers",
-                        name="Metode Gumbel",
-                        line=dict(color="#1E3A8A", width=3)
-                    ))
-                    fig_h.add_trace(go.Scatter(
-                        x=design_df["Kala Ulang (T)"],
-                        y=design_df["Log Pearson III (mm)"],
-                        mode="lines+markers",
-                        name="Metode Log Pearson III",
-                        line=dict(color="#0F766E", width=3, dash="dash")
-                    ))
-                    fig_h.update_layout(
-                        height=350,
-                        template="plotly_white",
-                        xaxis_title="Periode Ulang (T)",
-                        yaxis_title="Curah Hujan Rancangan (mm)",
-                        hovermode="x unified"
-                    )
-                    st.plotly_chart(fig_h, use_container_width=True)
+                with st.container(border=True):
+                    st.markdown("##### 📈 Kurva Pertumbuhan Curah Hujan Rancangan")
+                    if not design_df.empty:
+                        fig_h = go.Figure()
+                        fig_h.add_trace(go.Scatter(
+                            x=design_df["Kala Ulang (T)"],
+                            y=design_df["Gumbel (mm)"],
+                            mode="lines+markers",
+                            name="Metode Gumbel",
+                            line=dict(color="#1E3A8A", width=3)
+                        ))
+                        fig_h.add_trace(go.Scatter(
+                            x=design_df["Kala Ulang (T)"],
+                            y=design_df["Log Pearson III (mm)"],
+                            mode="lines+markers",
+                            name="Metode Log Pearson III",
+                            line=dict(color="#0F766E", width=3, dash="dash")
+                        ))
+                        fig_h.update_layout(
+                            height=350,
+                            template="plotly_white",
+                            xaxis_title="Periode Ulang (T)",
+                            yaxis_title="Curah Hujan Rancangan (mm)",
+                            hovermode="x unified"
+                        )
+                        st.plotly_chart(fig_h, use_container_width=True)
 
 
-# ----------------- TAB 6: INPUT DATA MANUAL -----------------
+# ----------------- TAB: INPUT DATA MANUAL -----------------
 with tab_input:
-    st.subheader("✍️ Input & Pembaruan Data Curah Hujan Manual")
-    st.caption("Tambahkan data curah hujan harian terbaru atau perbarui data pengamatan stasiun langsung ke sistem.")
+    with st.container(border=True):
+        st.subheader("✍️ Input & Pembaruan Data Curah Hujan Manual")
+        st.caption("Tambahkan data curah hujan harian terbaru atau perbarui data pengamatan stasiun langsung ke sistem. Tab ini kini berada di baris depan agar sangat mudah diakses.")
 
-    input_mode = st.radio(
-        "Pilih Metode Input:",
-        ["Input Data Harian Tunggal (Single Entry)", "Input Matriks 1 Bulan Penuh (Grid Editor)"],
-        horizontal=True
-    )
+        input_mode = st.radio(
+            "Pilih Metode Input:",
+            ["Input Data Harian Tunggal (Single Entry)", "Input Matriks 1 Bulan Penuh (Grid Editor)"],
+            horizontal=True
+        )
 
     if input_mode == "Input Data Harian Tunggal (Single Entry)":
-        st.markdown("##### 📝 Formulir Input Data Harian Tunggal")
-        with st.form("form_single_entry"):
-            col_in1, col_in2 = st.columns(2)
-            
-            with col_in1:
-                station_mode = st.radio("Pilihan Stasiun:", ["Pilih Stasiun Terdaftar", "Tambah Stasiun Baru"], horizontal=True)
-                if station_mode == "Pilih Stasiun Terdaftar":
-                    stn_input = st.selectbox("Nama / Kode Stasiun:", all_stations)
-                else:
-                    stn_input = st.text_input("Kode Stasiun Baru (misal: 69, 70a):").strip()
+        with st.container(border=True):
+            st.markdown("##### 📝 Formulir Input Data Harian Tunggal")
+            with st.form("form_single_entry"):
+                col_in1, col_in2 = st.columns(2)
                 
-                tgl_input = st.date_input("Tanggal Pengamatan:", value=datetime.date.today())
-            
-            with col_in2:
-                status_input = st.radio("Status Alat Pengukur:", ["Normal", "RUSAK"], horizontal=True,
-                                        help="Pilih RUSAK jika alat pengukur hujan tidak berfungsi pada tanggal ini.")
+                with col_in1:
+                    station_mode = st.radio("Pilihan Stasiun:", ["Pilih Stasiun Terdaftar", "Tambah Stasiun Baru"], horizontal=True)
+                    if station_mode == "Pilih Stasiun Terdaftar":
+                        stn_input = st.selectbox("Nama / Kode Stasiun:", all_stations)
+                    else:
+                        stn_input = st.text_input("Kode Stasiun Baru (misal: 69, 70a):").strip()
+                    
+                    tgl_input = st.date_input("Tanggal Pengamatan:", value=datetime.date.today())
                 
-                if status_input == "Normal":
-                    ch_input = st.number_input("Curah Hujan (mm):", min_value=0.0, max_value=500.0, value=0.0, step=0.1, format="%.1f",
-                                              help="Ketik 0 jika cuaca cerah/berawan dan tidak ada hujan sama sekali.")
-                else:
-                    ch_input = None
-                    st.info("⚠️ Sensor berstatus RUSAK. Curah hujan akan otomatis ditandai strip (-) dalam matriks pengamatan.")
+                with col_in2:
+                    status_input = st.radio("Status Alat Pengukur:", ["Normal", "RUSAK"], horizontal=True,
+                                            help="Pilih RUSAK jika alat pengukur hujan tidak berfungsi pada tanggal ini.")
+                    
+                    if status_input == "Normal":
+                        ch_input = st.number_input("Curah Hujan (mm):", min_value=0.0, max_value=500.0, value=0.0, step=0.1, format="%.1f",
+                                                  help="Ketik 0 jika cuaca cerah/berawan dan tidak ada hujan sama sekali.")
+                    else:
+                        ch_input = None
+                        st.info("⚠️ Sensor berstatus RUSAK. Curah hujan akan otomatis ditandai strip (-) dalam matriks pengamatan.")
 
-            submit_single = st.form_submit_button("💾 Simpan Data Harian", use_container_width=True, type="primary")
+                submit_single = st.form_submit_button("💾 Simpan Data Harian", use_container_width=True, type="primary")
 
-            if submit_single:
-                if not stn_input:
-                    st.error("Silakan tentukan nama / kode stasiun!")
-                else:
-                    new_df = add_or_update_rainfall_record(
+                if submit_single:
+                    if not stn_input:
+                        st.error("Silakan tentukan nama / kode stasiun!")
+                    else:
+                        new_df = add_or_update_rainfall_record(
+                            df_main=df_raw,
+                            station=stn_input,
+                            date_val=tgl_input,
+                            rain_val=ch_input,
+                            status=status_input
+                        )
+                        saved = persist_dataframe(new_df)
+                        if saved:
+                            st.cache_data.clear()
+                            st.success(f"✅ Data Stasiun {stn_input} tanggal {tgl_input.strftime('%d-%m-%Y')} ({'RUSAK (-)' if status_input == 'RUSAK' else f'{ch_input:.1f} mm'}) berhasil disimpan!")
+                            st.rerun()
+                        else:
+                            st.error("Gagal menyimpan data ke sistem penyimpanan.")
+
+    else:
+        with st.container(border=True):
+            st.markdown("##### 📅 Input Matriks 1 Bulan Penuh (Tabel 1 s/d 31 Hari)")
+            st.caption("Isi seluruh nilai curah hujan harian untuk stasiun dan bulan yang dipilih dalam satu tabel sekaligus.")
+
+            col_b1, col_b2, col_b3 = st.columns(3)
+            with col_b1:
+                bulk_stn = st.selectbox("Pilih Stasiun:", all_stations, key="bulk_stn")
+            with col_b2:
+                bulk_yr = st.number_input("Tahun:", min_value=2015, max_value=2035, value=2026, step=1, key="bulk_yr")
+            with col_b3:
+                bulk_m = st.selectbox("Bulan:", list(MONTH_NAMES_ID.keys()), format_func=lambda x: f"{x} - {MONTH_NAMES_ID[x]}", key="bulk_m")
+
+            import calendar
+            days_in_month = calendar.monthrange(int(bulk_yr), int(bulk_m))[1]
+
+            # Ambil data yang sudah ada untuk bulan ini (jika ada)
+            existing_subset = df_raw[
+                (df_raw["Stasiun"] == bulk_stn) & 
+                (df_raw["Tahun"] == int(bulk_yr)) & 
+                (df_raw["Bulan"] == int(bulk_m))
+            ].copy()
+            
+            existing_map = {}
+            for _, row in existing_subset.iterrows():
+                existing_map[int(row["Hari"])] = {
+                    "Curah_Hujan": row["Curah_Hujan"] if pd.notna(row["Curah_Hujan"]) else 0.0,
+                    "Status": str(row["Status"])
+                }
+
+            grid_data = []
+            for d in range(1, days_in_month + 1):
+                ex = existing_map.get(d, {"Curah_Hujan": 0.0, "Status": "Normal"})
+                grid_data.append({
+                    "Hari": d,
+                    "Tanggal": f"{int(bulk_yr)}-{int(bulk_m):02d}-{d:02d}",
+                    "Curah Hujan (mm)": float(ex["Curah_Hujan"]) if ex["Status"] != "RUSAK" else 0.0,
+                    "Status": "RUSAK" if ex["Status"] == "RUSAK" else "Normal"
+                })
+
+            df_grid = pd.DataFrame(grid_data)
+
+            st.info(f"💡 Menampilkan {days_in_month} hari untuk **Stasiun {bulk_stn}** — Bulan **{MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}**. Klik langsung pada sel untuk mengubah angka curah hujan atau status.")
+
+            edited_df = st.data_editor(
+                df_grid,
+                use_container_width=True,
+                num_rows="fixed",
+                height=min(500, days_in_month * 36 + 60),
+                column_config={
+                    "Hari": st.column_config.NumberColumn("Hari", disabled=True),
+                    "Tanggal": st.column_config.TextColumn("Tanggal", disabled=True),
+                    "Curah Hujan (mm)": st.column_config.NumberColumn("Curah Hujan (mm)", min_value=0.0, max_value=500.0, step=0.1, format="%.1f mm"),
+                    "Status": st.column_config.SelectboxColumn("Status", options=["Normal", "RUSAK"], required=True)
+                }
+            )
+
+            col_save1, col_save2 = st.columns([2, 4])
+            with col_save1:
+                if st.button(f"💾 Simpan Seluruh Bulan ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})", type="primary", use_container_width=True):
+                    daily_items = []
+                    for _, r in edited_df.iterrows():
+                        daily_items.append({
+                            "Hari": int(r["Hari"]),
+                            "Curah_Hujan": float(r["Curah Hujan (mm)"]) if r["Status"] != "RUSAK" else None,
+                            "Status": r["Status"]
+                        })
+                    new_df = save_bulk_monthly_records(
                         df_main=df_raw,
-                        station=stn_input,
-                        date_val=tgl_input,
-                        rain_val=ch_input,
-                        status=status_input
+                        station=bulk_stn,
+                        year=int(bulk_yr),
+                        month=int(bulk_m),
+                        daily_items=daily_items
                     )
                     saved = persist_dataframe(new_df)
                     if saved:
                         st.cache_data.clear()
-                        st.success(f"✅ Data Stasiun {stn_input} tanggal {tgl_input.strftime('%d-%m-%Y')} ({'RUSAK (-)' if status_input == 'RUSAK' else f'{ch_input:.1f} mm'}) berhasil disimpan!")
+                        st.success(f"✅ Data {days_in_month} hari untuk Stasiun {bulk_stn} ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}) berhasil disimpan secara permanen!")
                         st.rerun()
                     else:
-                        st.error("Gagal menyimpan data ke sistem penyimpanan.")
-
-    else:
-        st.markdown("##### 📅 Input Matriks 1 Bulan Penuh (Tabel 1 s/d 31 Hari)")
-        st.caption("Isi seluruh nilai curah hujan harian untuk stasiun dan bulan yang dipilih dalam satu tabel sekaligus.")
-
-        col_b1, col_b2, col_b3 = st.columns(3)
-        with col_b1:
-            bulk_stn = st.selectbox("Pilih Stasiun:", all_stations, key="bulk_stn")
-        with col_b2:
-            bulk_yr = st.number_input("Tahun:", min_value=2015, max_value=2035, value=2026, step=1, key="bulk_yr")
-        with col_b3:
-            bulk_m = st.selectbox("Bulan:", list(MONTH_NAMES_ID.keys()), format_func=lambda x: f"{x} - {MONTH_NAMES_ID[x]}", key="bulk_m")
-
-        import calendar
-        days_in_month = calendar.monthrange(int(bulk_yr), int(bulk_m))[1]
-
-        # Ambil data yang sudah ada untuk bulan ini (jika ada)
-        existing_subset = df_raw[
-            (df_raw["Stasiun"] == bulk_stn) & 
-            (df_raw["Tahun"] == int(bulk_yr)) & 
-            (df_raw["Bulan"] == int(bulk_m))
-        ].copy()
-        
-        existing_map = {}
-        for _, row in existing_subset.iterrows():
-            existing_map[int(row["Hari"])] = {
-                "Curah_Hujan": row["Curah_Hujan"] if pd.notna(row["Curah_Hujan"]) else 0.0,
-                "Status": str(row["Status"])
-            }
-
-        grid_data = []
-        for d in range(1, days_in_month + 1):
-            ex = existing_map.get(d, {"Curah_Hujan": 0.0, "Status": "Normal"})
-            grid_data.append({
-                "Hari": d,
-                "Tanggal": f"{int(bulk_yr)}-{int(bulk_m):02d}-{d:02d}",
-                "Curah Hujan (mm)": float(ex["Curah_Hujan"]) if ex["Status"] != "RUSAK" else 0.0,
-                "Status": "RUSAK" if ex["Status"] == "RUSAK" else "Normal"
-            })
-
-        df_grid = pd.DataFrame(grid_data)
-
-        st.info(f"💡 Menampilkan {days_in_month} hari untuk **Stasiun {bulk_stn}** — Bulan **{MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}**. Klik langsung pada sel untuk mengubah angka curah hujan atau status.")
-
-        edited_df = st.data_editor(
-            df_grid,
-            use_container_width=True,
-            num_rows="fixed",
-            height=min(500, days_in_month * 36 + 60),
-            column_config={
-                "Hari": st.column_config.NumberColumn("Hari", disabled=True),
-                "Tanggal": st.column_config.TextColumn("Tanggal", disabled=True),
-                "Curah Hujan (mm)": st.column_config.NumberColumn("Curah Hujan (mm)", min_value=0.0, max_value=500.0, step=0.1, format="%.1f mm"),
-                "Status": st.column_config.SelectboxColumn("Status", options=["Normal", "RUSAK"], required=True)
-            }
-        )
-
-        col_save1, col_save2 = st.columns([2, 4])
-        with col_save1:
-            if st.button(f"💾 Simpan Seluruh Bulan ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})", type="primary", use_container_width=True):
-                daily_items = []
-                for _, r in edited_df.iterrows():
-                    daily_items.append({
-                        "Hari": int(r["Hari"]),
-                        "Curah_Hujan": float(r["Curah Hujan (mm)"]) if r["Status"] != "RUSAK" else None,
-                        "Status": r["Status"]
-                    })
-                new_df = save_bulk_monthly_records(
-                    df_main=df_raw,
-                    station=bulk_stn,
-                    year=int(bulk_yr),
-                    month=int(bulk_m),
-                    daily_items=daily_items
-                )
-                saved = persist_dataframe(new_df)
-                if saved:
-                    st.cache_data.clear()
-                    st.success(f"✅ Data {days_in_month} hari untuk Stasiun {bulk_stn} ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}) berhasil disimpan secara permanen!")
-                    st.rerun()
-                else:
-                    st.error("Gagal menyimpan data.")
+                        st.error("Gagal menyimpan data.")
 
     # Bagian Riwayat Input Manual
-    st.markdown("---")
-    st.markdown("##### 📜 Catatan Riwayat Input Data Manual")
-    if os.path.exists("manual_records_log.csv"):
-        log_df = pd.read_csv("manual_records_log.csv")
-        st.dataframe(log_df.tail(25).iloc[::-1], use_container_width=True, height=260)
-    else:
-        st.caption("Belum ada riwayat input manual yang dicatat.")
+    with st.container(border=True):
+        st.markdown("##### 📜 Catatan Riwayat Input Data Manual")
+        if os.path.exists("manual_records_log.csv"):
+            log_df = pd.read_csv("manual_records_log.csv")
+            st.dataframe(log_df.tail(25).iloc[::-1], use_container_width=True, height=260)
+        else:
+            st.caption("Belum ada riwayat input manual yang dicatat.")
 
 
 

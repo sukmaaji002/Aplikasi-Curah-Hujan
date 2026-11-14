@@ -66,7 +66,8 @@ def export_to_excel(
     filter_info: dict = None,
     all_matrices_dict: dict = None,
     cross_station_monthly: pd.DataFrame = None,
-    pmax_matrix: pd.DataFrame = None
+    pmax_matrix: pd.DataFrame = None,
+    weibull_data: dict = None
 ) -> io.BytesIO:
     """Mengekspor data terfilter, ringkasan, dan seluruh matriks hidrologi ke format Excel (.xlsx)."""
     output = io.BytesIO()
@@ -197,17 +198,29 @@ def export_to_excel(
 
         row_curr = start_row + 1
         for i, (_, r) in enumerate(summary_df.iterrows(), 1):
+            def safe_flt(val, default=0.0):
+                try:
+                    return float(val) if pd.notna(val) else default
+                except (ValueError, TypeError):
+                    return default
+
+            def safe_int(val, default=0):
+                try:
+                    return int(val) if pd.notna(val) else default
+                except (ValueError, TypeError):
+                    return default
+
             vals = [
                 i,
                 str(r["Stasiun"]),
-                float(r["Total Curah Hujan (mm)"]),
-                float(r["Rata-rata Harian (mm)"]),
-                float(r["Curah Hujan Maks (mm)"]),
-                str(r["Tgl Hujan Maks"]),
-                int(r["Hari Hujan (>0 mm)"]),
-                int(r["Hari Kering (0 mm)"]),
-                int(r["Sensor Rusak"]),
-                int(r["Total Data Hari"])
+                safe_flt(r.get("Total Curah Hujan (mm)")),
+                safe_flt(r.get("Rata-rata Harian (mm)")),
+                safe_flt(r.get("Curah Hujan Maks (mm)")),
+                str(r.get("Tgl Hujan Maks", "-")),
+                safe_int(r.get("Hari Hujan (>0 mm)")),
+                safe_int(r.get("Hari Kering (0 mm)")),
+                safe_int(r.get("Sensor Rusak")),
+                safe_int(r.get("Total Data Hari"))
             ]
             for c_idx, val in enumerate(vals, 1):
                 cell = ws_sum.cell(row=row_curr, column=c_idx, value=val)
@@ -223,10 +236,39 @@ def export_to_excel(
                     cell.number_format = "#,##0"
             row_curr += 1
 
+        # Tambahkan Baris Total / Rata-rata jika stasiun lebih dari 1
+        if len(summary_df) > 1:
+            tot_ch = summary_df["Total Curah Hujan (mm)"].sum()
+            avg_ch = summary_df["Rata-rata Harian (mm)"].mean()
+            max_ch = summary_df["Curah Hujan Maks (mm)"].max()
+            tot_hh = summary_df["Hari Hujan (>0 mm)"].sum()
+            tot_hk = summary_df["Hari Kering (0 mm)"].sum()
+            tot_sr = summary_df["Sensor Rusak"].sum()
+            tot_th = summary_df["Total Data Hari"].sum()
+
+            sum_vals = [
+                "", "RATA-RATA / TOTAL", round(tot_ch, 1), round(avg_ch, 2),
+                round(max_ch, 1), "-", int(tot_hh), int(tot_hk), int(tot_sr), int(tot_th)
+            ]
+            for c_idx, val in enumerate(sum_vals, 1):
+                cell = ws_sum.cell(row=row_curr, column=c_idx, value=val)
+                cell.font = font_bold
+                cell.fill = fill_subtotal
+                cell.border = thin_border
+                if c_idx in (1, 2, 6):
+                    cell.alignment = align_center
+                elif c_idx in (3, 4, 5):
+                    cell.alignment = align_right
+                    cell.number_format = "0.0"
+                else:
+                    cell.alignment = align_right
+                    cell.number_format = "#,##0"
+            row_curr += 1
+
         for col in ws_sum.columns:
             col_letter = get_column_letter(col[0].column)
             max_len = max(len(str(cell.value or '')) for cell in col)
-            ws_sum.column_dimensions[col_letter].width = max(max_len + 3, 12)
+            ws_sum.column_dimensions[col_letter].width = max(max_len + 3, 13)
 
     # ==================== SHEET 3: MATRIKS HIDROLOGI LENGKAP ====================
     # Mendukung seluruh stasiun dan seluruh tahun yang dipilih
@@ -247,7 +289,6 @@ def export_to_excel(
 
         curr_r = 4
         # Sortir stasiun dan tahun: Nama stasiun dahulu, kemudian tahun-tahunnya berurutan!
-        # Contoh urutan: 22a 2016, 22a 2017, 22b 2016, 22b 2017, 23 2016, 23 2017
         sorted_keys = sorted(
             list(dict_to_export.keys()),
             key=lambda k: (natural_station_key(k[0]), int(k[1]))
@@ -262,10 +303,14 @@ def export_to_excel(
 
             # Block Header: STASIUN & TAHUN
             ws_mat.merge_cells(start_row=curr_r, start_column=1, end_row=curr_r, end_column=num_cols)
-            block_cell = ws_mat.cell(row=curr_r, column=1, value=f"STASIUN : {stn_name}   |   TAHUN : {yr_val}")
-            block_cell.font = font_block_title
-            block_cell.fill = fill_block_header
-            block_cell.alignment = align_left
+            for c_c in range(1, num_cols + 1):
+                cell_box = ws_mat.cell(row=curr_r, column=c_c)
+                cell_box.fill = fill_block_header
+                cell_box.border = thin_border
+                if c_c == 1:
+                    cell_box.value = f"STASIUN : {stn_name}   |   TAHUN : {yr_val}"
+                    cell_box.font = font_block_title
+                    cell_box.alignment = align_left
             curr_r += 1
 
             # Headers: Tgl, Jan..Des
@@ -291,7 +336,6 @@ def export_to_excel(
                 for c_idx, val in enumerate(row_vals, 2):
                     cell = ws_mat.cell(row=curr_r, column=c_idx)
                     if pd.isna(val) or str(val).strip() in ("-", "RUSAK"):
-                        # Data sensor rusak atau tanggal tidak valid ditulis strip (-)
                         cell.value = "-"
                         cell.alignment = align_center
                     else:
@@ -314,7 +358,6 @@ def export_to_excel(
                                 cell.alignment = align_right
                                 cell.number_format = "0.0"
                         elif num == 0:
-                            # Sesuai permintaan: data bernilai 0 ditulis angka 0, JANGAN diubah jadi strip (-)
                             cell.value = 0
                             cell.alignment = align_right
                             cell.number_format = "0"
@@ -337,7 +380,10 @@ def export_to_excel(
 
         for col in ws_mat.columns:
             col_letter = get_column_letter(col[0].column)
-            ws_mat.column_dimensions[col_letter].width = 9
+            if col_letter == "A":
+                ws_mat.column_dimensions[col_letter].width = 16
+            else:
+                ws_mat.column_dimensions[col_letter].width = 10
 
     # ==================== SHEET 4: REKAP BULANAN SEMUA STASIUN ====================
     if cross_station_monthly is not None and not cross_station_monthly.empty:
@@ -376,9 +422,46 @@ def export_to_excel(
                 cell.border = thin_border
             r_curr += 1
 
+        # Tambahkan Baris RATA-RATA & TOTAL antar stasiun
+        if len(cross_station_monthly) > 1:
+            r_avg = ws_cross.cell(row=r_curr, column=1, value="RATA-RATA (mm)")
+            r_avg.font = font_bold
+            r_avg.fill = fill_subtotal
+            r_avg.alignment = align_center
+            r_avg.border = thin_border
+            for c_idx, col_name in enumerate(cross_station_monthly.columns, 2):
+                col_vals = pd.to_numeric(cross_station_monthly[col_name], errors='coerce').dropna()
+                avg_val = round(col_vals.mean(), 1) if not col_vals.empty else 0.0
+                cell = ws_cross.cell(row=r_curr, column=c_idx, value=avg_val)
+                cell.font = font_bold
+                cell.fill = fill_subtotal
+                cell.alignment = align_right
+                cell.number_format = "0.0"
+                cell.border = thin_border
+            r_curr += 1
+
+            r_tot = ws_cross.cell(row=r_curr, column=1, value="TOTAL (mm)")
+            r_tot.font = font_bold
+            r_tot.fill = fill_subtotal
+            r_tot.alignment = align_center
+            r_tot.border = thin_border
+            for c_idx, col_name in enumerate(cross_station_monthly.columns, 2):
+                col_vals = pd.to_numeric(cross_station_monthly[col_name], errors='coerce').dropna()
+                tot_val = round(col_vals.sum(), 1) if not col_vals.empty else 0.0
+                cell = ws_cross.cell(row=r_curr, column=c_idx, value=tot_val)
+                cell.font = font_bold
+                cell.fill = fill_subtotal
+                cell.alignment = align_right
+                cell.number_format = "0.0"
+                cell.border = thin_border
+            r_curr += 1
+
         for col in ws_cross.columns:
             col_letter = get_column_letter(col[0].column)
-            ws_cross.column_dimensions[col_letter].width = 11
+            if col_letter == "A":
+                ws_cross.column_dimensions[col_letter].width = 16
+            else:
+                ws_cross.column_dimensions[col_letter].width = 12
 
     # ==================== SHEET 5: PMAX TAHUNAN (ANALISIS HIDROLOGI) ====================
     if pmax_matrix is not None and not pmax_matrix.empty:
@@ -407,7 +490,7 @@ def export_to_excel(
             
             for c_idx, val in enumerate(row_data, 2):
                 cell = ws_pmax.cell(row=r_curr, column=c_idx)
-                if pd.isna(val):
+                if pd.isna(val) or str(val).strip() in ("-", ""):
                     cell.value = "-"
                     cell.alignment = align_center
                 else:
@@ -418,9 +501,133 @@ def export_to_excel(
                 cell.border = thin_border
             r_curr += 1
 
+        # Tambahkan Baris RATA-RATA & PMAX TERTINGGI antar stasiun
+        if len(pmax_matrix) > 1:
+            r_avg = ws_pmax.cell(row=r_curr, column=1, value="RATA-RATA PMAX (mm)")
+            r_avg.font = font_bold
+            r_avg.fill = fill_subtotal
+            r_avg.alignment = align_center
+            r_avg.border = thin_border
+            for c_idx, col_name in enumerate(pmax_matrix.columns, 2):
+                col_vals = pd.to_numeric(pmax_matrix[col_name], errors='coerce').dropna()
+                avg_val = round(col_vals.mean(), 1) if not col_vals.empty else 0.0
+                cell = ws_pmax.cell(row=r_curr, column=c_idx, value=avg_val)
+                cell.font = font_bold
+                cell.fill = fill_subtotal
+                cell.alignment = align_right
+                cell.number_format = "0.0"
+                cell.border = thin_border
+            r_curr += 1
+
+            r_max = ws_pmax.cell(row=r_curr, column=1, value="PMAX TERTINGGI (mm)")
+            r_max.font = font_bold
+            r_max.fill = fill_subtotal
+            r_max.alignment = align_center
+            r_max.border = thin_border
+            for c_idx, col_name in enumerate(pmax_matrix.columns, 2):
+                col_vals = pd.to_numeric(pmax_matrix[col_name], errors='coerce').dropna()
+                max_val = round(col_vals.max(), 1) if not col_vals.empty else 0.0
+                cell = ws_pmax.cell(row=r_curr, column=c_idx, value=max_val)
+                cell.font = font_bold
+                cell.fill = fill_subtotal
+                cell.alignment = align_right
+                cell.number_format = "0.0"
+                cell.border = thin_border
+            r_curr += 1
+
         for col in ws_pmax.columns:
             col_letter = get_column_letter(col[0].column)
-            ws_pmax.column_dimensions[col_letter].width = 12
+            if col_letter == "A":
+                ws_pmax.column_dimensions[col_letter].width = 20
+            else:
+                ws_pmax.column_dimensions[col_letter].width = 14
+
+    # ==================== SHEET 6: DEBIT & CURAH HUJAN ANDALAN (METODE WEIBULL) ====================
+    if weibull_data and "summary" in weibull_data and not weibull_data["summary"].empty:
+        ws_wb = wb.create_sheet(title="Debit Andalan (Weibull)")
+        ws_wb.views.sheetView[0].showGridLines = True
+        
+        ws_wb["A1"] = "ANALISIS CURAH HUJAN & ESTIMASI DEBIT ANDALAN (METODE WEIBULL)"
+        ws_wb["A1"].font = font_title
+        ws_wb["A2"] = "Rumus Probabilitas Terlampaui: P = [m / (N + 1)] x 100% | Standar Ditjen SDA / PU Pengairan"
+        ws_wb["A2"].font = font_subtitle
+
+        wb_sum = weibull_data["summary"]
+        wb_headers = list(wb_sum.columns)
+        
+        for col_idx, h in enumerate(wb_headers, 1):
+            cell = ws_wb.cell(row=4, column=col_idx, value=h)
+            cell.font = font_header
+            cell.fill = fill_header_teal
+            cell.alignment = align_center
+            cell.border = thin_border
+
+        r_wb = 5
+        for _, r_data in wb_sum.iterrows():
+            is_annual = "TOTAL" in str(r_data.get("Bulan / Periode", ""))
+            for c_idx, h in enumerate(wb_headers, 1):
+                val = r_data[h]
+                cell = ws_wb.cell(row=r_wb, column=c_idx)
+                cell.border = thin_border
+                if is_annual:
+                    cell.font = font_bold
+                    cell.fill = fill_subtotal
+                else:
+                    cell.font = font_regular
+
+                if isinstance(val, (int, float)):
+                    cell.value = float(val) if not isinstance(val, int) else int(val)
+                    cell.alignment = align_right
+                    if h == "No" or h == "Hari":
+                        cell.number_format = "#,##0"
+                    elif "m3/s" in h:
+                        cell.number_format = "0.000"
+                    elif "L/s" in h or "mm" in h:
+                        cell.number_format = "0.0"
+                else:
+                    cell.value = str(val)
+                    if h == "Bulan / Periode":
+                        cell.alignment = align_left
+                    else:
+                        cell.alignment = align_center
+            r_wb += 1
+
+        # Tabel Ranking Tahunan
+        if "annual_ranking" in weibull_data and not weibull_data["annual_ranking"].empty:
+            r_wb += 2
+            ws_wb.cell(row=r_wb, column=1, value="TABEL PERINGKAT & PROBABILITAS WEIBULL (DATA TAHUNAN)").font = font_bold
+            r_wb += 1
+            ann_rank = weibull_data["annual_ranking"]
+            rank_headers = list(ann_rank.columns)
+            for c_idx, h in enumerate(rank_headers, 1):
+                c_cell = ws_wb.cell(row=r_wb, column=c_idx, value=h)
+                c_cell.font = font_header
+                c_cell.fill = fill_header_navy
+                c_cell.alignment = align_center
+                c_cell.border = thin_border
+            r_wb += 1
+            for _, r_val in ann_rank.iterrows():
+                for c_idx, h in enumerate(rank_headers, 1):
+                    val = r_val[h]
+                    c_cell = ws_wb.cell(row=r_wb, column=c_idx)
+                    c_cell.font = font_regular
+                    c_cell.border = thin_border
+                    if isinstance(val, (int, float)):
+                        c_cell.value = float(val) if not isinstance(val, int) else int(val)
+                        c_cell.alignment = align_right
+                        if "P (" in h or "Nilai" in h:
+                            c_cell.number_format = "0.00"
+                        else:
+                            c_cell.number_format = "#,##0"
+                    else:
+                        c_cell.value = str(val)
+                        c_cell.alignment = align_center
+                r_wb += 1
+
+        for col in ws_wb.columns:
+            col_letter = get_column_letter(col[0].column)
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            ws_wb.column_dimensions[col_letter].width = max(max_len + 3, 13)
 
     wb.save(output)
     output.seek(0)
