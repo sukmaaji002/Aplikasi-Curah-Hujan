@@ -525,6 +525,7 @@ with tab_table:
             Total_Hari=("Curah_Hujan", "count")
         ).reset_index()
         m_agg.sort_values(by=["Stasiun", "Tahun", "Bulan"], inplace=True)
+        m_agg.drop(columns=["Bulan"], inplace=True)
         m_agg.rename(columns={
             "Nama_Bulan": "Bulan",
             "Total_CH": "Total CH (mm)",
