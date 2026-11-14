@@ -459,13 +459,11 @@ for stn in selected_stations:
 cross_monthly_export = get_cross_station_monthly_matrix(df_for_matrices, months=months_in_filter)
 pmax_export = get_pmax_cross_matrix(df_for_matrices)
 
-# Hitung data Debit Andalan (Metode Weibull) untuk diekspor ke Excel
+# Hitung data Debit Andalan (Metode Weibull Q80) untuk diekspor ke Excel
 weibull_export = calculate_dependable_flow_and_rainfall(
     df=filtered_df,
     station=None,
-    probabilities=(80, 85, 90, 95),
-    das_area_km2=50.0,
-    runoff_c=0.60
+    crop_type="Padi"
 )
 
 mat_stn = selected_stations[0] if selected_stations else "21b"
@@ -876,43 +874,48 @@ with tab_summary:
             }
         )
 
-# ----------------- TAB: DEBIT ANDALAN (METODE WEIBULL) -----------------
+# ----------------- TAB: DEBIT ANDALAN (METODE WEIBULL Q80) -----------------
 with tab_weibull:
     with st.container(border=True):
-        st.subheader("💧 Analisis Curah Hujan & Debit Andalan (Metode Weibull)")
+        st.subheader("💧 Analisis Curah Hujan & Debit Andalan Irigasi (Metode Weibull Q80)")
         st.caption(
-            "Perhitungan probabilitas terlampaui menggunakan rumus Weibull: "
-            "P = [m / (N + 1)] x 100% sesuai standar Ditjen SDA Kementerian PUPR & SNI Hidrologi. "
-            "Digunakan untuk perencanaan irigasi (R80 / Q80), air baku/PDAM (Q90), dan PLTA (Q85)."
+            "Perhitungan probabilitas terlampaui menggunakan rumus Weibull: P = [m / (N + 1)] x 100% "
+            "khusus keandalan 80% (Q80) untuk perencanaan irigasi & pertanian sesuai Standar Perencanaan Irigasi KP-01 Ditjen Pengairan PUPR."
         )
 
-    # Box Pengaturan Parameter
+    # Box Pengaturan Parameter (Hanya Data Curah Hujan & Jenis Tanaman, Tanpa Luas DAS)
     with st.container(border=True):
-        st.markdown("##### ⚙️ Parameter Perhitungan & Karakteristik DAS")
-        col_w_stn, col_w_das, col_w_c, col_w_p = st.columns([2, 1.5, 1.5, 2])
+        st.markdown("##### 🌾 Parameter Irigasi & Pertanian")
+        col_w_stn, col_w_crop = st.columns([1.5, 2.5])
         with col_w_stn:
             stn_w_options = ["Semua Stasiun (Rata-rata Kawasan)"] + selected_stations
-            selected_w_stn = st.selectbox("Stasiun Pengamatan:", stn_w_options, key="weibull_stn_choice")
-        with col_w_das:
-            das_area = st.number_input("Luas DAS (km²):", min_value=0.1, max_value=50000.0, value=50.0, step=5.0, format="%.1f",
-                                       help="Luas Daerah Aliran Sungai untuk konversi curah hujan menjadi debit.")
-        with col_w_c:
-            runoff_coef = st.number_input("Koefisien Aliran (C):", min_value=0.05, max_value=1.00, value=0.60, step=0.05, format="%.2f",
-                                          help="Koefisien pengaliran permukaan (0.3 - 0.5 perbukitan/hutan, 0.5 - 0.7 pertanian/campuran, 0.7 - 0.9 perkotaan).")
-        with col_w_p:
-            custom_prob = st.slider("Tingkat Keandalan Kustom (%):", min_value=50, max_value=99, value=80, step=1,
-                                    help="80% = Standar Irigasi Padi, 85% = Palawija/PLTA, 90% = Air Bersih/Baku.")
+            selected_w_stn = st.selectbox("Pilih Stasiun Pengamatan:", stn_w_options, key="weibull_stn_choice")
+        with col_w_crop:
+            crop_choice = st.radio(
+                "Pilih Jenis Tanaman Irigasi:",
+                [
+                    "Padi Sawah (Koefisien C = 0.70)",
+                    "Palawija / Jagung / Kedelai (Koefisien C = 0.50)",
+                    "Hortikultura / Buah & Sayur (Koefisien C = 0.60)"
+                ],
+                horizontal=False,
+                key="crop_type_radio"
+            )
 
-    # Eksekusi Analisis Weibull
+    # Tentukan jenis tanaman
+    if "Palawija" in crop_choice:
+        crop_key = "Palawija"
+    elif "Hortikultura" in crop_choice:
+        crop_key = "Hortikultura"
+    else:
+        crop_key = "Padi"
+
+    # Eksekusi Analisis Weibull Q80
     stn_query = None if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)" else selected_w_stn
-    all_target_probs = sorted(list(set([80, 85, 90, 95, int(custom_prob)])))
-    
     weibull_results = calculate_dependable_flow_and_rainfall(
         df=filtered_df,
         station=stn_query,
-        probabilities=all_target_probs,
-        das_area_km2=das_area,
-        runoff_c=runoff_coef
+        crop_type=crop_key
     )
 
     if not weibull_results["summary"].empty:
@@ -924,25 +927,41 @@ with tab_weibull:
             annual_row = annual_row_match.iloc[0]
             with st.container(border=True):
                 col_wk1, col_wk2, col_wk3, col_wk4 = st.columns(4)
-                col_wk1.metric(f"Curah Hujan Andalan R80", f"{annual_row.get('R80 (mm)', 0):,.1f} mm", help="Keandalan 80% (Standar Irigasi)")
-                col_wk2.metric(f"Debit Andalan Q80", f"{annual_row.get('Q80 (m3/s)', 0):,.3f} m³/s", help=f"Setara {annual_row.get('Q80 (L/s)', 0):,.1f} L/detik")
-                col_wk3.metric(f"Curah Hujan Andalan R90", f"{annual_row.get('R90 (mm)', 0):,.1f} mm", help="Keandalan 90% (Standar Air Bersih)")
-                col_wk4.metric(f"Debit Andalan Q90", f"{annual_row.get('Q90 (m3/s)', 0):,.3f} m³/s", help=f"Setara {annual_row.get('Q90 (L/s)', 0):,.1f} L/detik")
+                col_wk1.metric(
+                    "Curah Hujan Andalan R80",
+                    f"{annual_row.get('R80 Curah Hujan (mm)', 0):,.1f} mm",
+                    help="Curah hujan tahunan dengan probabilitas terpenuhi 80% (Metode Weibull)"
+                )
+                col_wk2.metric(
+                    "Koefisien Tanaman (C)",
+                    f"{annual_row.get('Koefisien (C)', 0.7):.2f}",
+                    help=f"Koefisien tanaman {crop_key} (Standar KP-01 Ditjen Pengairan)"
+                )
+                col_wk3.metric(
+                    "Debit / CH Efektif Q80",
+                    f"{annual_row.get('Q80 Andalan Irigasi (mm)', 0):,.1f} mm",
+                    help="Ketersediaan air efektif tahunan untuk tanaman (C x R80)"
+                )
+                col_wk4.metric(
+                    "Debit Irigasi Spesifik",
+                    f"{annual_row.get('Q80 Debit Irigasi (L/detik/ha)', 0):,.3f} L/s/ha",
+                    help="Rata-rata ketersediaan debit irigasi per hektar lahan pertanian"
+                )
 
         # Tabel Utama
         with st.container(border=True):
-            st.markdown("##### 📋 Tabel Curah Hujan & Debit Andalan Bulanan (Metode Weibull)")
-            st.caption(f"Hasil perhitungan untuk **{selected_w_stn}** dengan Luas DAS = {das_area} km² dan C = {runoff_coef}")
+            st.markdown(f"##### 📋 Tabel Curah Hujan & Debit Andalan Q80 Bulanan ({crop_key})")
+            st.caption(f"Hasil perhitungan untuk **{selected_w_stn}** — Jenis Tanaman: **{crop_key}** (Koefisien C = {weibull_results.get('crop_coef', 0.7):.2f})")
             
-            # Kolom konfigurasi format
             w_col_config = {
                 "No": st.column_config.NumberColumn(format="%d"),
-                "Hari": st.column_config.NumberColumn(format="%d hari")
+                "Hari": st.column_config.NumberColumn(format="%d hari"),
+                "R80 Curah Hujan (mm)": st.column_config.NumberColumn(format="%.1f mm"),
+                "Koefisien (C)": st.column_config.NumberColumn(format="%.2f"),
+                "Q80 Andalan Irigasi (mm)": st.column_config.NumberColumn(format="%.1f mm"),
+                "Q80 Rata-rata (mm/hari)": st.column_config.NumberColumn(format="%.2f mm/hari"),
+                "Q80 Debit Irigasi (L/detik/ha)": st.column_config.NumberColumn(format="%.3f L/s/ha"),
             }
-            for p in all_target_probs:
-                w_col_config[f"R{p} (mm)"] = st.column_config.NumberColumn(format="%.1f mm")
-                w_col_config[f"Q{p} (m3/s)"] = st.column_config.NumberColumn(format="%.3f m³/s")
-                w_col_config[f"Q{p} (L/s)"] = st.column_config.NumberColumn(format="%.1f L/s")
 
             st.dataframe(
                 w_sum,
@@ -955,19 +974,19 @@ with tab_weibull:
         col_wg1, col_wg2 = st.columns(2)
         with col_wg1:
             with st.container(border=True):
-                st.markdown("##### 📊 Profil Debit Andalan Bulanan (Q80 & Q90)")
+                st.markdown(f"##### 📊 Perbandingan R80 vs Q80 Irigasi ({crop_key})")
                 sub_months = w_sum[w_sum["Bulan / Periode"] != "TOTAL TAHUNAN"]
                 fig_w_bar = go.Figure()
                 fig_w_bar.add_trace(go.Bar(
                     x=sub_months["Bulan / Periode"],
-                    y=sub_months["Q80 (m3/s)"],
-                    name="Q80 (Irigasi 80%)",
-                    marker_color="#1E3A8A"
+                    y=sub_months["R80 Curah Hujan (mm)"],
+                    name="R80 Curah Hujan (mm)",
+                    marker_color="#3B82F6"
                 ))
                 fig_w_bar.add_trace(go.Bar(
                     x=sub_months["Bulan / Periode"],
-                    y=sub_months["Q90 (m3/s)"],
-                    name="Q90 (Air Bersih 90%)",
+                    y=sub_months["Q80 Andalan Irigasi (mm)"],
+                    name=f"Q80 Irigasi {crop_key} (mm)",
                     marker_color="#0F766E"
                 ))
                 fig_w_bar.update_layout(
@@ -975,14 +994,14 @@ with tab_weibull:
                     template="plotly_white",
                     barmode="group",
                     xaxis_title="Bulan",
-                    yaxis_title="Debit (m³/detik)",
+                    yaxis_title="Curah Hujan & Debit (mm)",
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
                 st.plotly_chart(fig_w_bar, use_container_width=True)
 
         with col_wg2:
             with st.container(border=True):
-                st.markdown("##### 📈 Kurva Durasi Curah Hujan / Debit (Weibull Duration Curve)")
+                st.markdown("##### 📈 Kurva Durasi Curah Hujan Tahunan (Weibull Duration Curve)")
                 ann_rank = weibull_results["annual_ranking"]
                 if not ann_rank.empty:
                     fig_w_curve = go.Figure()
@@ -991,15 +1010,14 @@ with tab_weibull:
                         y=ann_rank["Nilai"],
                         mode="lines+markers",
                         name="Curah Hujan Tahunan",
-                        line=dict(color="#2563EB", width=2.5),
+                        line=dict(color="#1E3A8A", width=2.5),
                         marker=dict(size=7)
                     ))
-                    fig_w_curve.add_vline(x=80, line_dash="dash", line_color="#DC2626", annotation_text="P=80% (Irigasi)")
-                    fig_w_curve.add_vline(x=90, line_dash="dot", line_color="#D97706", annotation_text="P=90% (Air Bersih)")
+                    fig_w_curve.add_vline(x=80, line_dash="dash", line_color="#DC2626", annotation_text="P=80% (Standar Irigasi)")
                     fig_w_curve.update_layout(
                         height=360,
                         template="plotly_white",
-                        xaxis_title="Probabilitas Terlampaui P (%)",
+                        xaxis_title="Probabilitas Terlampaui P (%) = [m/(N+1)] x 100",
                         yaxis_title="Curah Hujan Tahunan (mm)",
                         hovermode="x unified"
                     )

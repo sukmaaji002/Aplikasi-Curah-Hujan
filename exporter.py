@@ -547,9 +547,9 @@ def export_to_excel(
         ws_wb = wb.create_sheet(title="Debit Andalan (Weibull)")
         ws_wb.views.sheetView[0].showGridLines = True
         
-        ws_wb["A1"] = "ANALISIS CURAH HUJAN & ESTIMASI DEBIT ANDALAN (METODE WEIBULL)"
+        ws_wb["A1"] = "ANALISIS CURAH HUJAN & DEBIT ANDALAN IRIGASI (METODE WEIBULL Q80)"
         ws_wb["A1"].font = font_title
-        ws_wb["A2"] = "Rumus Probabilitas Terlampaui: P = [m / (N + 1)] x 100% | Standar Ditjen SDA / PU Pengairan"
+        ws_wb["A2"] = "Rumus Probabilitas Terlampaui: P = [m / (N + 1)] x 100% | Standar Irigasi KP-01 Ditjen Pengairan PUPR"
         ws_wb["A2"].font = font_subtitle
 
         wb_sum = weibull_data["summary"]
@@ -580,9 +580,11 @@ def export_to_excel(
                     cell.alignment = align_right
                     if h == "No" or h == "Hari":
                         cell.number_format = "#,##0"
-                    elif "m3/s" in h:
+                    elif "L/detik" in h or "L/s" in h:
                         cell.number_format = "0.000"
-                    elif "L/s" in h or "mm" in h:
+                    elif "Koefisien" in h or "(C)" in h or "mm/hari" in h:
+                        cell.number_format = "0.00"
+                    elif "mm" in h:
                         cell.number_format = "0.0"
                 else:
                     cell.value = str(val)

@@ -161,7 +161,7 @@ def get_design_rainfall_summary(df: pd.DataFrame, station: str) -> pd.DataFrame:
 
 
 # ==============================================================================
-# PERHITUNGAN CURAH HUJAN & DEBIT ANDALAN METODE WEIBULL
+# PERHITUNGAN CURAH HUJAN & DEBIT ANDALAN METODE WEIBULL (IRIGASI & PERTANIAN)
 # ==============================================================================
 
 MONTH_NAMES_INDONESIA = {
@@ -173,6 +173,25 @@ MONTH_NAMES_INDONESIA = {
 DAYS_PER_MONTH = {
     1: 31, 2: 28.25, 3: 31, 4: 30, 5: 31, 6: 30,
     7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31
+}
+
+# Koefisien Pengaliran / Curah Hujan Efektif Irigasi Standar KP-01 Ditjen Pengairan PUPR
+CROP_IRRIGATION_CONFIG = {
+    "Padi": {
+        "coef": 0.70,
+        "name": "Padi Sawah (C = 0.70)",
+        "desc": "Standar Perencanaan Irigasi KP-01 Ditjen Pengairan PUPR (Curah Hujan Efektif Re = 70% x R80)"
+    },
+    "Palawija": {
+        "coef": 0.50,
+        "name": "Palawija / Jagung / Kedelai (C = 0.50)",
+        "desc": "Standar Perencanaan Irigasi KP-01 Ditjen Pengairan PUPR (Curah Hujan Efektif Re = 50% x R80)"
+    },
+    "Hortikultura": {
+        "coef": 0.60,
+        "name": "Hortikultura / Buah & Sayur (C = 0.60)",
+        "desc": "Standar Irigasi Tanaman Hortikultura / Sayuran Semusim (Curah Hujan Efektif Re = 60% x R80)"
+    }
 }
 
 def calculate_weibull_ranking(series: pd.Series) -> pd.DataFrame:
@@ -196,9 +215,9 @@ def calculate_weibull_ranking(series: pd.Series) -> pd.DataFrame:
     sorted_df["Probabilitas P (%)"] = ((sorted_df["Peringkat (m)"] / (n + 1)) * 100.0).round(2)
     return sorted_df
 
-def interpolate_weibull_value(ranking_df: pd.DataFrame, target_p: float) -> float:
+def interpolate_weibull_value(ranking_df: pd.DataFrame, target_p: float = 80.0) -> float:
     """
-    Interpolasi linier untuk memperoleh nilai pada probabilitas target P (%).
+    Interpolasi linier untuk memperoleh nilai pada probabilitas target P (%) (Default: 80% untuk Irigasi).
     m_target = (P / 100) * (N + 1)
     """
     if ranking_df.empty:
@@ -230,33 +249,44 @@ def interpolate_weibull_value(ranking_df: pd.DataFrame, target_p: float) -> floa
 def calculate_dependable_flow_and_rainfall(
     df: pd.DataFrame,
     station: str = None,
-    probabilities=(80, 85, 90, 95),
-    das_area_km2: float = 100.0,
-    runoff_c: float = 0.6
+    crop_type: str = "Padi",
+    crop_c: float = None,
+    **kwargs
 ) -> dict:
     """
-    Menghitung Curah Hujan Andalan & Estimasi Debit Andalan (Metode Weibull).
+    Menghitung Curah Hujan Andalan (R80) & Debit Andalan Irigasi (Q80) Metode Weibull (P = m / (N+1) * 100%).
+    Murni berdasarkan parameter data curah hujan tanpa memerlukan luas DAS.
     
-    Parameter:
-    - df: DataFrame curah hujan (kolom Stasiun, Tahun, Bulan, Curah_Hujan)
-    - station: Nama stasiun (jika None, menggunakan seluruh stasiun yang tersedia)
-    - probabilities: Tuple tingkat keandalan (default: 80% Irigasi Padi, 85%, 90% Air Bersih, 95%)
-    - das_area_km2: Luas Daerah Aliran Sungai (DAS) dalam km2
-    - runoff_c: Koefisien aliran permukaan (Runoff Coefficient, 0 - 1)
-
-    Rumus Debit Andalan:
-    Q (m3/detik) = (C * R * A * 10^6 m2) / (Hari * 86.400 detik * 1000 mm/m)
-                 = (C * R * A) / (Hari * 86.4)
+    Koefisien Pengaliran / Curah Hujan Efektif Irigasi Standar KP-01 Ditjen Pengairan:
+    - Padi: C = 0.70
+    - Palawija: C = 0.50
+    - Hortikultura: C = 0.60
+    
+    Output Debit Irigasi:
+    - R80 (mm/bulan): Curah Hujan Andalan Keandalan 80%
+    - Q80 (mm/bulan): Curah Hujan Efektif / Debit Andalan Irigasi = C * R80
+    - Q80 (mm/hari): Rata-rata harian = Q80_bulan / Hari
+    - Q80 (L/detik/ha): Ketersediaan debit irigasi per hektar = Q80_hari * 0.11574
     """
     sub = df[df["Curah_Hujan"].notna()].copy()
-    if station is not None and station != "Semua Stasiun":
-        sub = sub[sub["Stasiun"] == station]
-
     if sub.empty:
-        return {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame()}
+        return {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_info": {}}
 
-    # Agregasi total bulanan per tahun
-    monthly_data = sub.groupby(["Tahun", "Bulan"])["Curah_Hujan"].sum().unstack(level="Bulan")
+    c_val = crop_c if crop_c is not None else CROP_IRRIGATION_CONFIG.get(crop_type, {}).get("coef", 0.70)
+
+    # Pisahkan perhitungan jika 1 stasiun spesifik vs semua stasiun (rata-rata kawasan)
+    if station is not None and station != "Semua Stasiun" and station != "Semua Stasiun (Rata-rata Kawasan)":
+        sub = sub[sub["Stasiun"] == station]
+        if sub.empty:
+            return {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_info": {}}
+        monthly_matrix = sub.groupby(["Tahun", "Bulan"])["Curah_Hujan"].sum().unstack(level="Bulan")
+        annual_series = sub.groupby("Tahun")["Curah_Hujan"].sum()
+    else:
+        # RATA-RATA KAWASAN (Rata-rata curah hujan antar stasiun, BUKAN dijumlahkan!)
+        stn_m = sub.groupby(["Stasiun", "Tahun", "Bulan"])["Curah_Hujan"].sum().reset_index()
+        monthly_matrix = stn_m.groupby(["Tahun", "Bulan"])["Curah_Hujan"].mean().unstack(level="Bulan")
+        stn_y = sub.groupby(["Stasiun", "Tahun"])["Curah_Hujan"].sum().reset_index()
+        annual_series = stn_y.groupby("Tahun")["Curah_Hujan"].mean()
 
     summary_rows = []
     rankings_dict = {}
@@ -264,55 +294,57 @@ def calculate_dependable_flow_and_rainfall(
     for m in range(1, 13):
         m_name = MONTH_NAMES_INDONESIA[m]
         days = DAYS_PER_MONTH[m]
-        
-        if m in monthly_data.columns:
-            series_m = monthly_data[m].dropna()
+
+        if m in monthly_matrix.columns:
+            series_m = monthly_matrix[m].dropna()
         else:
             series_m = pd.Series(dtype=float)
 
         rank_df = calculate_weibull_ranking(series_m)
         rankings_dict[m_name] = rank_df
 
-        row = {
+        r80_val = interpolate_weibull_value(rank_df, 80.0)
+        q80_bln = round(c_val * r80_val, 1)
+        q80_hari = round(q80_bln / days, 2) if days > 0 else 0.0
+        q80_lps_ha = round(q80_hari * 0.11574, 3)
+
+        summary_rows.append({
             "No": m,
             "Bulan / Periode": m_name,
-            "Hari": int(days)
-        }
+            "Hari": int(days),
+            "R80 Curah Hujan (mm)": round(r80_val, 1),
+            "Koefisien (C)": round(c_val, 2),
+            "Q80 Andalan Irigasi (mm)": q80_bln,
+            "Q80 Rata-rata (mm/hari)": q80_hari,
+            "Q80 Debit Irigasi (L/detik/ha)": q80_lps_ha
+        })
 
-        for p in probabilities:
-            val_r = interpolate_weibull_value(rank_df, p)
-            # Hitung debit Q dalam m3/detik
-            q_val = (runoff_c * val_r * das_area_km2) / (days * 86.4) if days > 0 else 0.0
-            row[f"R{p} (mm)"] = round(val_r, 1)
-            row[f"Q{p} (m3/s)"] = round(q_val, 3)
-            row[f"Q{p} (L/s)"] = round(q_val * 1000.0, 1)
-
-        summary_rows.append(row)
-
-    # Tambahkan Analisis Tahunan
-    annual_data = sub.groupby("Tahun")["Curah_Hujan"].sum()
-    annual_rank = calculate_weibull_ranking(annual_data)
+    # Analisis Total Tahunan
+    annual_rank = calculate_weibull_ranking(annual_series)
     rankings_dict["Tahunan"] = annual_rank
 
-    annual_row = {
+    r80_ann = interpolate_weibull_value(annual_rank, 80.0)
+    q80_ann_bln = round(c_val * r80_ann, 1)
+    q80_ann_hari = round(q80_ann_bln / 365.25, 2)
+    q80_ann_lps = round(q80_ann_hari * 0.11574, 3)
+
+    summary_rows.append({
         "No": 13,
         "Bulan / Periode": "TOTAL TAHUNAN",
-        "Hari": 365
-    }
-    for p in probabilities:
-        val_r_ann = interpolate_weibull_value(annual_rank, p)
-        q_ann = (runoff_c * val_r_ann * das_area_km2) / (365.25 * 86.4)
-        annual_row[f"R{p} (mm)"] = round(val_r_ann, 1)
-        annual_row[f"Q{p} (m3/s)"] = round(q_ann, 3)
-        annual_row[f"Q{p} (L/s)"] = round(q_ann * 1000.0, 1)
-
-    summary_rows.append(annual_row)
-    summary_df = pd.DataFrame(summary_rows)
+        "Hari": 365,
+        "R80 Curah Hujan (mm)": round(r80_ann, 1),
+        "Koefisien (C)": round(c_val, 2),
+        "Q80 Andalan Irigasi (mm)": q80_ann_bln,
+        "Q80 Rata-rata (mm/hari)": q80_ann_hari,
+        "Q80 Debit Irigasi (L/detik/ha)": q80_ann_lps
+    })
 
     return {
-        "summary": summary_df,
+        "summary": pd.DataFrame(summary_rows),
         "rankings": rankings_dict,
-        "annual_ranking": annual_rank
+        "annual_ranking": annual_rank,
+        "crop_type": crop_type,
+        "crop_coef": c_val
     }
 
 
