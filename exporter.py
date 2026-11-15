@@ -1055,13 +1055,14 @@ def export_to_pdf(
         ))
 
         # Tabel Ringkasan Bulanan
-        wb_cols = ["No", "Bulan / Periode", "Hari", "R80 Hujan (mm)", "Koef (C)", "Q80 Irigasi (mm)", "Q80 (mm/hari)", "Q80 Debit (L/s/ha)"]
+        wb_cols = ["No", "Bulan / Periode", "Hari", "R80 Hujan (mm)", "Koef (C)", "Q80 Irigasi (mm)", "Q80 (mm/hari)", "Q80 Debit (L/detik)"]
         wb_table_data = [[Paragraph(f"<b>{col}</b>", body_bold) for col in wb_cols]]
 
         for _, r in wb_sum.iterrows():
             is_tot = str(r["Bulan / Periode"]) == "TOTAL TAHUNAN"
             r_style = body_bold if is_tot else body_style
             no_str = "" if is_tot else str(int(r["No"])) if pd.notna(r["No"]) else ""
+            q_val = float(r.get("Q80 Debit Irigasi (L/detik)", r.get("Q80 Debit Irigasi (L/detik/ha)", 0)))
             row = [
                 Paragraph(no_str, r_style),
                 Paragraph(str(r["Bulan / Periode"]), r_style),
@@ -1070,7 +1071,7 @@ def export_to_pdf(
                 Paragraph(f"{float(r['Koefisien (C)']):,.2f}", r_style),
                 Paragraph(f"{float(r['Q80 Andalan Irigasi (mm)']):,.1f}", r_style),
                 Paragraph(f"{float(r['Q80 Rata-rata (mm/hari)']):,.2f}", r_style),
-                Paragraph(f"{float(r['Q80 Debit Irigasi (L/detik/ha)']):,.3f}", r_style),
+                Paragraph(f"{q_val:,.3f}", r_style),
             ]
             wb_table_data.append(row)
 
@@ -1198,13 +1199,13 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
     r80_tot = float(tot_row["R80 Curah Hujan (mm)"].iloc[0]) if not tot_row.empty else 0.0
     q80_tot = float(tot_row["Q80 Andalan Irigasi (mm)"].iloc[0]) if not tot_row.empty else 0.0
     q80_avg_d = float(tot_row["Q80 Rata-rata (mm/hari)"].iloc[0]) if not tot_row.empty else 0.0
-    q80_spec = float(tot_row["Q80 Debit Irigasi (L/detik/ha)"].iloc[0]) if not tot_row.empty else 0.0
+    q80_spec = float(tot_row.get("Q80 Debit Irigasi (L/detik)", tot_row.get("Q80 Debit Irigasi (L/detik/ha)", 0)).iloc[0]) if not tot_row.empty else 0.0
 
     kpi_defs = [
         ("B", "C", "R80 TOTAL TAHUNAN", f"{r80_tot:,.1f} mm"),
         ("D", "E", f"Q80 ANDALAN IRIGASI ({crop_name.upper()})", f"{q80_tot:,.1f} mm"),
         ("F", "G", "RATA-RATA Q80 HARIAN", f"{q80_avg_d:,.2f} mm/hari"),
-        ("H", "I", "DEBIT SPESIFIK RATA-RATA", f"{q80_spec:,.3f} L/s/ha"),
+        ("H", "I", "DEBIT ANDALAN Q80 RATA-RATA", f"{q80_spec:,.3f} L/detik"),
     ]
     for col_s, col_e, kpi_t, kpi_v in kpi_defs:
         ws1.merge_cells(f"{col_s}9:{col_e}9")
@@ -1228,7 +1229,7 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
     headers_wb = [
         "No", "Bulan / Periode", "Hari", "R80 Curah Hujan (mm)",
         "Koefisien (C)", "Q80 Andalan Irigasi (mm)", "Q80 Rata-rata (mm/hari)",
-        "Q80 Debit Irigasi (L/detik/ha)"
+        "Q80 Debit Irigasi (L/detik)"
     ]
     for col_idx, h in enumerate(headers_wb, 1):
         cell = ws1.cell(row=13, column=col_idx, value=h)
@@ -1246,7 +1247,7 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
             border_use = double_bottom if is_tot else thin_border
 
             for c_idx, h in enumerate(headers_wb, 1):
-                val = r_data.get(h, "")
+                val = r_data.get(h, r_data.get("Q80 Debit Irigasi (L/detik/ha)", ""))
                 cell = ws1.cell(row=cur_row, column=c_idx)
                 cell.font = f_use
                 cell.fill = fill_use
@@ -1273,7 +1274,7 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
                     cell.value = float(val) if pd.notna(val) else 0.0
                     cell.number_format = "0.00"
                     cell.alignment = align_right
-                elif h == "Q80 Debit Irigasi (L/detik/ha)":
+                elif h in ("Q80 Debit Irigasi (L/detik)", "Q80 Debit Irigasi (L/detik/ha)"):
                     cell.value = float(val) if pd.notna(val) else 0.0
                     cell.number_format = "0.000"
                     cell.alignment = align_right
@@ -1607,20 +1608,20 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
     r80_tot = float(tot_row["R80 Curah Hujan (mm)"].iloc[0]) if not tot_row.empty else 0.0
     q80_tot = float(tot_row["Q80 Andalan Irigasi (mm)"].iloc[0]) if not tot_row.empty else 0.0
     q80_avg_d = float(tot_row["Q80 Rata-rata (mm/hari)"].iloc[0]) if not tot_row.empty else 0.0
-    q80_spec = float(tot_row["Q80 Debit Irigasi (L/detik/ha)"].iloc[0]) if not tot_row.empty else 0.0
+    q80_spec = float(tot_row.get("Q80 Debit Irigasi (L/detik)", tot_row.get("Q80 Debit Irigasi (L/detik/ha)", 0)).iloc[0]) if not tot_row.empty else 0.0
 
     kpi_card_data = [
         [
             Paragraph("<font size=7 color='#64748B'><b>CURAH HUJAN R80 TAHUNAN</b></font>", body_style),
             Paragraph(f"<font size=7 color='#64748B'><b>DEBIT ANDALAN Q80 ({crop_label.upper()})</b></font>", body_style),
             Paragraph("<font size=7 color='#64748B'><b>RATA-RATA Q80 BULANAN</b></font>", body_style),
-            Paragraph("<font size=7 color='#64748B'><b>DEBIT SPESIFIK RATA-RATA</b></font>", body_style),
+            Paragraph("<font size=7 color='#64748B'><b>DEBIT ANDALAN Q80 RATA-RATA</b></font>", body_style),
         ],
         [
             Paragraph(f"<font size=12 color='#1E3A8A'><b>{r80_tot:,.1f} mm</b></font>", body_style),
             Paragraph(f"<font size=12 color='#0F766E'><b>{q80_tot:,.1f} mm</b></font>", body_style),
             Paragraph(f"<font size=12 color='#1E3A8A'><b>{q80_avg_d:,.2f} mm/hari</b></font>", body_style),
-            Paragraph(f"<font size=12 color='#0F766E'><b>{q80_spec:,.3f} L/s/ha</b></font>", body_style),
+            Paragraph(f"<font size=12 color='#0F766E'><b>{q80_spec:,.3f} L/detik</b></font>", body_style),
         ]
     ]
     kpi_table = Table(kpi_card_data, colWidths=[190, 190, 190, 190])
@@ -1637,7 +1638,7 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
 
     # Section 1: Monthly Summary Table
     story.append(Paragraph("1. Tabel Curah Hujan R80 & Debit Andalan Q80 Bulanan", section_style))
-    wb_cols = ["No", "Bulan / Periode", "Hari", "R80 Hujan (mm)", "Koef (C)", "Q80 Irigasi (mm)", "Q80 (mm/hari)", "Q80 Debit (L/s/ha)"]
+    wb_cols = ["No", "Bulan / Periode", "Hari", "R80 Hujan (mm)", "Koef (C)", "Q80 Irigasi (mm)", "Q80 (mm/hari)", "Q80 Debit (L/detik)"]
     wb_table_data = [[Paragraph(f"<b>{col}</b>", body_bold) for col in wb_cols]]
 
     if not wb_sum.empty:
@@ -1645,6 +1646,7 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
             is_tot = str(r["Bulan / Periode"]) == "TOTAL TAHUNAN"
             r_style = body_bold if is_tot else body_style
             no_str = "" if is_tot else str(int(r["No"])) if pd.notna(r["No"]) else ""
+            q_val = float(r.get("Q80 Debit Irigasi (L/detik)", r.get("Q80 Debit Irigasi (L/detik/ha)", 0)))
             row = [
                 Paragraph(no_str, r_style),
                 Paragraph(str(r["Bulan / Periode"]), r_style),
@@ -1653,7 +1655,7 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
                 Paragraph(f"{float(r['Koefisien (C)']):,.2f}", r_style),
                 Paragraph(f"{float(r['Q80 Andalan Irigasi (mm)']):,.1f}", r_style),
                 Paragraph(f"{float(r['Q80 Rata-rata (mm/hari)']):,.2f}", r_style),
-                Paragraph(f"{float(r['Q80 Debit Irigasi (L/detik/ha)']):,.3f}", r_style),
+                Paragraph(f"{q_val:,.3f}", r_style),
             ]
             wb_table_data.append(row)
 

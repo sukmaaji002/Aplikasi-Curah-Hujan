@@ -399,7 +399,7 @@ def calculate_dependable_flow_and_rainfall(
     - R80 (mm/bulan): Curah Hujan Andalan Keandalan 80%
     - Q80 (mm/bulan): Curah Hujan Efektif / Debit Andalan Irigasi = C * R80
     - Q80 (mm/hari): Rata-rata harian = Q80_bulan / Hari
-    - Q80 (L/detik/ha): Ketersediaan debit irigasi per hektar = Q80_hari * 0.11574
+    - Q80 (L/detik): Ketersediaan debit andalan irigasi = Q80_hari * 0.11574
     """
     try:
         if args:
@@ -482,7 +482,7 @@ def calculate_dependable_flow_and_rainfall(
                 "Koefisien (C)": round(c_val, 2),
                 "Q80 Andalan Irigasi (mm)": q80_bln,
                 "Q80 Rata-rata (mm/hari)": q80_hari,
-                "Q80 Debit Irigasi (L/detik/ha)": q80_lps_ha
+                "Q80 Debit Irigasi (L/detik)": q80_lps_ha
             })
 
         # Analisis Total Tahunan
@@ -502,7 +502,7 @@ def calculate_dependable_flow_and_rainfall(
             "Koefisien (C)": round(c_val, 2),
             "Q80 Andalan Irigasi (mm)": q80_ann_bln,
             "Q80 Rata-rata (mm/hari)": q80_ann_hari,
-            "Q80 Debit Irigasi (L/detik/ha)": q80_ann_lps
+            "Q80 Debit Irigasi (L/detik)": q80_ann_lps
         })
 
         return {

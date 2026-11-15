@@ -1271,9 +1271,9 @@ with tab_weibull:
                     help="Ketersediaan air efektif tahunan untuk tanaman (C x R80)"
                 )
                 col_wk4.metric(
-                    "Debit Irigasi Spesifik",
-                    f"{annual_row.get('Q80 Debit Irigasi (L/detik/ha)', 0):,.3f} L/s/ha",
-                    help="Rata-rata ketersediaan debit irigasi per hektar lahan pertanian"
+                    "Debit Andalan Irigasi Q80",
+                    f"{annual_row.get('Q80 Debit Irigasi (L/detik)', annual_row.get('Q80 Debit Irigasi (L/detik/ha)', 0)):,.3f} L/detik",
+                    help="Ketersediaan debit andalan irigasi Q80 metode Weibull (liter per detik)"
                 )
 
         # Kotak Informasi Rinci Stasiun & Deret Tahun Pengamatan
@@ -1320,7 +1320,7 @@ with tab_weibull:
                 "Koefisien (C)": st.column_config.NumberColumn("Koefisien (C)", format="%.2f"),
                 "Q80 Andalan Irigasi (mm)": st.column_config.NumberColumn("Q80 Andalan Irigasi (mm)", format="%.1f"),
                 "Q80 Rata-rata (mm/hari)": st.column_config.NumberColumn("Q80 Rata-rata (mm/hari)", format="%.2f"),
-                "Q80 Debit Irigasi (L/detik/ha)": st.column_config.NumberColumn("Q80 Debit Irigasi (L/detik/ha)", format="%.3f"),
+                "Q80 Debit Irigasi (L/detik)": st.column_config.NumberColumn("Q80 Debit Irigasi (L/detik)", format="%.3f"),
             }
 
             st.dataframe(
