@@ -8,6 +8,10 @@ import io
 import sys
 import importlib
 import re
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 
 import data_processor
 import exporter
@@ -441,6 +445,9 @@ with st.container(border=True):
 summary_table_df = get_station_summary(filtered_df)
 
 # Helper fungsi format tampilan matriks hidrologi (0 tetap 0, sensor rusak kosong dan diarsir hitam)
+_matrix_cmap = plt.get_cmap("Blues")
+_matrix_norm = mcolors.Normalize(vmin=0, vmax=100)
+
 def format_matrix_cell(v):
     if str(v).strip().upper() == "RUSAK":
         return ""
@@ -456,10 +463,22 @@ def format_matrix_cell(v):
     except:
         return str(v)
 
-def style_matrix_cells(val):
-    if str(val).strip().upper() == "RUSAK":
-        return "background-color: #000000; color: #000000;"
-    return ""
+def color_matrix_cell(val):
+    s_val = str(val).strip().upper() if pd.notna(val) else ""
+    if s_val == "RUSAK":
+        return "background-color: #000000; color: #000000; font-weight: bold;"
+    if pd.isna(val) or s_val in ("-", ""):
+        return "color: #94A3B8;"
+    try:
+        f = float(val)
+        if f <= 0:
+            return "background-color: #FFFFFF; color: #1E293B;"
+        rgba = _matrix_cmap(_matrix_norm(min(f, 100)))
+        hex_col = mcolors.to_hex(rgba)
+        txt_col = "#FFFFFF" if f > 50 else "#0F172A"
+        return f"background-color: {hex_col}; color: {txt_col};"
+    except Exception:
+        return ""
 
 # Siapkan seluruh matriks bulanan untuk SEMUA stasiun terpilih dan SEMUA tahun yang difilter
 all_matrices_export = {}
@@ -724,9 +743,7 @@ with tab_matrix:
                         mat_df = get_monthly_matrix(df_for_matrices, stn_val, yr_item, months=months_in_filter)
                         if not mat_df.empty:
                             st.dataframe(
-                                mat_df.style.background_gradient(
-                                    cmap="Blues", subset=mat_df.columns, vmin=0, vmax=100
-                                ).format(format_matrix_cell).map(style_matrix_cells),
+                                mat_df.style.format(format_matrix_cell).map(color_matrix_cell),
                                 use_container_width=True,
                                 height=420
                             )
@@ -746,7 +763,7 @@ with tab_matrix:
         if not cross_mat.empty:
             st.dataframe(
                 cross_mat.style.format(format_matrix_cell).background_gradient(
-                    cmap="Tealgrn", subset=cross_mat.columns[:-1]
+                    cmap="BuGn", subset=cross_mat.columns[:-1]
                 ),
                 use_container_width=True,
                 height=min(600, len(cross_mat) * 35 + 80)
@@ -784,9 +801,7 @@ with tab_matrix:
             mat_display = get_monthly_matrix(df_for_matrices, matrix_stn_select, matrix_yr_select, months=months_in_filter)
             if not mat_display.empty:
                 st.dataframe(
-                    mat_display.style.background_gradient(
-                        cmap="Blues", subset=mat_display.columns, vmin=0, vmax=100
-                    ).format(format_matrix_cell).map(style_matrix_cells),
+                    mat_display.style.format(format_matrix_cell).map(color_matrix_cell),
                     use_container_width=True,
                     height=520
                 )
