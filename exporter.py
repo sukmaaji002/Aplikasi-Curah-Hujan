@@ -1521,6 +1521,31 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
     ann_rank = weibull_data.get("annual_ranking", pd.DataFrame())
     rankings_all = weibull_data.get("rankings", {})
 
+    # Kop / Header Instansi jika diatur
+    if filter_info and filter_info.get("instansi"):
+        instansi_style = ParagraphStyle(
+            "InstansiHeaderWb",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=11,
+            leading=13,
+            textColor=colors.HexColor("#0B192C"),
+            spaceAfter=2
+        )
+        sub_instansi_style = ParagraphStyle(
+            "SubInstansiHeaderWb",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.HexColor("#334155"),
+            spaceAfter=6
+        )
+        story.append(Paragraph(filter_info["instansi"].upper(), instansi_style))
+        if filter_info.get("proyek"):
+            story.append(Paragraph(f"Unit Kerja / Bidang: {filter_info['proyek']}", sub_instansi_style))
+        story.append(Spacer(1, 4))
+
     # Header / Title
     story.append(Paragraph("LAPORAN ANALISIS DEBIT ANDALAN IRIGASI (METODE WEIBULL Q80)", title_style))
     story.append(Paragraph(
@@ -1536,7 +1561,7 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
     n_yr = weibull_data.get("n_years", 1)
 
     stn_desc = f"<b>Stasiun Pengamatan:</b> {stn_label}"
-    if "Semua" in str(stn_label) and stn_list_str:
+    if ("Semua" in str(stn_label) or "Kawasan" in str(stn_label)) and stn_list_str:
         stn_desc += f"<br/><font size=7 color='#4B5563'><b>Daftar {n_stn} Stasiun:</b> {stn_list_str}</font>"
 
     yr_desc = f"<b>Deret Tahun Pengamatan:</b> {yr_range_str}"

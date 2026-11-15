@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import os
+import base64
 import plotly.express as px
 import plotly.graph_objects as go
 import io
@@ -12,6 +13,16 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+
+def get_base64_image(image_path: str) -> str:
+    """Mengonversi file gambar lokal ke format base64 string untuk disematkan dalam HTML."""
+    try:
+        if os.path.exists(image_path):
+            with open(image_path, "rb") as f:
+                return base64.b64encode(f.read()).decode("utf-8")
+    except Exception:
+        pass
+    return ""
 
 import data_processor
 import exporter
@@ -62,13 +73,88 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS styling
+# Custom CSS styling (Modern PUPR Theme)
 st.markdown("""
 <style>
     /* Global container styling */
     .block-container {
-        padding-top: 2rem;
+        padding-top: 1.5rem;
         padding-bottom: 2rem;
+    }
+    /* PUPR Header Branding Banner */
+    .pupr-header-card {
+        background: linear-gradient(135deg, #0B192C 0%, #1E3E62 45%, #001F3F 100%);
+        border-radius: 16px;
+        padding: 20px 26px;
+        margin-bottom: 20px;
+        border-left: 6px solid #0284C7;
+        border-bottom: 3.5px solid #F59E0B;
+        box-shadow: 0 10px 25px -5px rgba(11, 25, 44, 0.25);
+        color: #FFFFFF;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+    .pupr-header-content {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex: 1;
+        min-width: 320px;
+    }
+    .pupr-header-logo {
+        height: 64px;
+        max-width: 170px;
+        object-fit: contain;
+        filter: drop-shadow(0 2px 8px rgba(0,0,0,0.35));
+    }
+    .pupr-tagline {
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #FDE047;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+    }
+    .pupr-title {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: #FFFFFF;
+        letter-spacing: 0.5px;
+        line-height: 1.25;
+        margin: 2px 0;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .pupr-subtitle {
+        font-size: 0.8rem;
+        color: #CBD5E1;
+        font-weight: 400;
+        line-height: 1.3;
+    }
+    .pupr-header-badges {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+    }
+    .pupr-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+    }
+    .pupr-badge-primary {
+        background-color: rgba(2, 132, 199, 0.35);
+        color: #38BDF8;
+        border: 1px solid rgba(56, 189, 248, 0.4);
+    }
+    .pupr-badge-gold {
+        background-color: rgba(245, 158, 11, 0.25);
+        color: #FDE047;
+        border: 1px solid rgba(245, 158, 11, 0.5);
     }
     /* Box card container */
     .custom-card {
@@ -90,16 +176,18 @@ st.markdown("""
     }
     /* Metric Card Styling */
     div[data-testid="stMetric"] {
-        background-color: #FFFFFF;
-        border: 1.5px solid #CBD5E1;
+        background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+        border: 1px solid #E2E8F0;
+        border-top: 3.5px solid #0284C7;
         padding: 12px 16px;
-        border-radius: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-        transition: transform 0.15s ease-in-out;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
     }
     div[data-testid="stMetric"]:hover {
-        border-color: #3B82F6;
+        border-top-color: #F59E0B;
         transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
     }
     div[data-testid="stMetricLabel"] {
         font-size: 0.85rem;
@@ -121,26 +209,28 @@ st.markdown("""
     }
     /* Tab headers with solid card boundaries */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 6px;
-        border-bottom: 2px solid #CBD5E1;
+        gap: 8px;
+        border-bottom: 2px solid #E2E8F0;
         padding-bottom: 4px;
         overflow-x: auto;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 42px;
-        border-radius: 8px 8px 0 0;
-        padding: 0 16px;
+        height: 44px;
+        border-radius: 10px 10px 0 0;
+        padding: 0 18px;
         font-weight: 600;
-        font-size: 0.9rem;
-        background-color: #F8FAFC;
+        font-size: 0.92rem;
+        background-color: #F1F5F9;
         color: #475569;
-        border: 1px solid #CBD5E1;
+        border: 1px solid #E2E8F0;
         border-bottom: none;
+        transition: all 0.2s ease-in-out;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #1E3A8A !important;
+        background: linear-gradient(135deg, #1E3A8A 0%, #0284C7 100%) !important;
         color: #FFFFFF !important;
         border-color: #1E3A8A !important;
+        box-shadow: 0 4px 6px -1px rgba(2, 132, 199, 0.25);
     }
     /* Section badge */
     .filter-badge {
@@ -194,9 +284,21 @@ def load_data(source_type="default", uploaded_file=None, raw_text=""):
 # SIDEBAR: SUMBER DATA & FILTER
 # ==============================================================================
 with st.sidebar:
-    st.image("https://img.icons8.com/fluency/96/rain.png", width=64)
-    st.title("🌧️ Filter Data Curah Hujan")
-    st.caption("Aplikasi Analisis & Ekspor Data Hidrologi")
+    # Sidebar Header Branding DPUPR Kab. Tegal
+    logo_sidebar_b64 = get_base64_image("assets/logo_pupr_tegal.png")
+    if logo_sidebar_b64:
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #0B192C 0%, #1E3E62 100%); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; border-bottom: 3px solid #F59E0B; text-align: center;">
+            <img src="data:image/png;base64,{logo_sidebar_b64}" style="height: 48px; max-width: 140px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4)); margin-bottom: 6px;" />
+            <div style="font-size: 0.78rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.5px; line-height: 1.2;">DINAS PEKERJAAN UMUM DAN PENATAAN RUANG</div>
+            <div style="font-size: 0.85rem; font-weight: 800; color: #FDE047; letter-spacing: 0.8px;">KABUPATEN TEGAL</div>
+            <div style="font-size: 0.70rem; color: #BAE6FD; margin-top: 3px;">Bidang Sumber Daya Air & Irigasi</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.image("https://img.icons8.com/fluency/96/rain.png", width=64)
+        st.title("🌧️ DPUPR KAB. TEGAL")
+        st.caption("Aplikasi Analisis & Ekspor Data Hidrologi")
     st.markdown("---")
 
     # 1. SUMBER DATA
@@ -387,13 +489,34 @@ filtered_df = filtered_df[
 
 
 # ==============================================================================
-# MAIN PANEL: HEADER & BADGES
+# MAIN PANEL: HEADER & BRANDING DPUPR KABUPATEN TEGAL
 # ==============================================================================
-st.title("🌧️ Analisis & Filter Data Curah Hujan")
+logo_main_b64 = get_base64_image("assets/logo_pupr_tegal.png")
+if logo_main_b64:
+    st.markdown(f"""
+    <div class="pupr-header-card">
+        <div class="pupr-header-content">
+            <img src="data:image/png;base64,{logo_main_b64}" class="pupr-header-logo" alt="Logo DPUPR Kab Tegal" />
+            <div class="pupr-title-box">
+                <div class="pupr-tagline">PEMERINTAH KABUPATEN TEGAL</div>
+                <div class="pupr-title">DINAS PEKERJAAN UMUM DAN PENATAAN RUANG</div>
+                <div class="pupr-subtitle">Sistem Informasi & Analisis Data Curah Hujan, Debit Andalan Irigasi (Weibull Q80) & Kala Ulang Hidrologi</div>
+            </div>
+        </div>
+        <div class="pupr-header-badges">
+            <span class="pupr-badge pupr-badge-primary">🏛️ DPUPR KAB. TEGAL</span>
+            <span class="pupr-badge pupr-badge-gold">🌊 Bidang SDA & Irigasi</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.title("🏛️ DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL")
+    st.caption("Bidang Sumber Daya Air & Irigasi — Sistem Analisis Data Curah Hujan & Hidrologi")
+
 st.markdown(
-    f"Hasil filter data hidrologi berdasarkan kriteria yang dipilih: "
+    f"Hasil filter data hidrologi sesuai kriteria sidebar: "
     f"<span class='filter-badge'>📅 {filter_periode_str}</span> "
-    f"<span class='filter-badge'>📍 {len(selected_stations)} Stasiun</span> "
+    f"<span class='filter-badge'>📍 {len(selected_stations)} Stasiun Terpilih</span> "
     f"<span class='filter-badge'>🌧️ {'Hari Hujan Saja' if only_rain_days else 'Semua Hari'}</span>",
     unsafe_allow_html=True
 )
@@ -504,8 +627,13 @@ for stn in selected_stations:
 cross_monthly_export = get_cross_station_monthly_matrix(df_for_matrices, months=months_in_filter)
 pmax_export = get_pmax_cross_matrix(df_for_matrices)
 
-# Hitung data Debit Andalan (Metode Weibull Q80) untuk diekspor ke Excel
-stn_filter_wb = df_raw[df_raw["Stasiun"].isin(selected_stations)] if selected_stations else df_raw
+# Hitung data Debit Andalan (Metode Weibull Q80) untuk diekspor ke Excel (Disesuaikan dengan Stasiun & Tahun di Filter Sidebar)
+if selected_stations and years_in_filter:
+    stn_filter_wb = df_raw[df_raw["Stasiun"].isin(selected_stations) & df_raw["Tahun"].isin(years_in_filter)]
+elif selected_stations:
+    stn_filter_wb = df_raw[df_raw["Stasiun"].isin(selected_stations)]
+else:
+    stn_filter_wb = df_raw
 try:
     weibull_export = calculate_dependable_flow_and_rainfall(
         df=stn_filter_wb,
@@ -527,6 +655,8 @@ matrix_download = all_matrices_export.get((mat_stn, mat_year), None)
 
 stn_str_label = ", ".join(selected_stations[:5]) + ("..." if len(selected_stations) > 5 else "")
 filter_info_dict = {
+    "instansi": "DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL",
+    "proyek": "Bidang Sumber Daya Air & Irigasi",
     "periode": filter_periode_str,
     "stasiun": f"{len(selected_stations)} Stasiun ({stn_str_label})",
     "kategori": f"{'Hari Hujan > 0mm' if only_rain_days else 'Semua Nilai'} ({ch_range[0]}-{ch_range[1]} mm)",
@@ -944,9 +1074,10 @@ with tab_weibull:
     # Box Pengaturan Parameter (Data Curah Hujan, Jenis Tanaman, Deret Data Historis & Infilling)
     with st.container(border=True):
         st.markdown("##### 🌾 Parameter Irigasi, Pertanian & Penanganan Data Alat Rusak")
-        col_w_stn, col_w_crop, col_w_src, col_w_infill = st.columns([1.2, 1.3, 1.2, 1.3])
+        col_w_stn, col_w_crop, col_w_src, col_w_infill = st.columns([1.3, 1.3, 1.2, 1.2])
         with col_w_stn:
-            stn_w_options = ["Semua Stasiun (Rata-rata Kawasan)"] + selected_stations
+            stn_w_label_kawasan = f"Rata-rata Kawasan ({len(selected_stations)} Stasiun Terpilih di Sidebar)"
+            stn_w_options = [stn_w_label_kawasan] + selected_stations
             selected_w_stn = st.selectbox("Pilih Stasiun Pengamatan:", stn_w_options, key="weibull_stn_choice")
         with col_w_crop:
             crop_choice = st.radio(
@@ -960,12 +1091,13 @@ with tab_weibull:
                 key="crop_type_radio"
             )
         with col_w_src:
+            min_filter_yr = min(years_in_filter) if years_in_filter else 2015
+            max_filter_yr = max(years_in_filter) if years_in_filter else 2026
+            opt_w_sidebar = f"Sesuai Filter Sidebar ({min_filter_yr} - {max_filter_yr}, N = {len(years_in_filter)} Thn)"
+            opt_w_all = "Seluruh Data Historis (2015 - 2026, Standar PUPR)"
             weibull_src_choice = st.radio(
                 "Deret Data Waktu (N Tahun):",
-                [
-                    "Seluruh Data Historis (2015-2026, Standar PUPR)",
-                    "Sesuai Filter Sidebar Saat Ini"
-                ],
+                [opt_w_sidebar, opt_w_all],
                 key="weibull_src_choice",
                 help="Sesuai SNI & Standar Perencanaan KP-01 Ditjen Pengairan PUPR, analisis andalan membutuhkan deret data multi-tahun (idealnya >= 10 tahun) untuk memperoleh probabilitas 80% yang valid."
             )
@@ -988,16 +1120,16 @@ with tab_weibull:
     else:
         crop_key = "Padi"
 
-    # Tentukan sumber dataset (Historis lengkap vs Terfilter)
-    if "Seluruh Data Historis" in weibull_src_choice:
-        df_w_target = df_raw
+    # Tentukan sumber dataset (Disesuaikan dengan stasiun dan filter sidebar)
+    if "Sesuai Filter Sidebar" in weibull_src_choice:
+        df_w_target = df_raw[df_raw["Stasiun"].isin(selected_stations) & df_raw["Tahun"].isin(years_in_filter)]
     else:
-        df_w_target = filtered_df
+        df_w_target = df_raw[df_raw["Stasiun"].isin(selected_stations)]
 
     infill_method_wb = "auto" if "Estimasi Otomatis" in weibull_infill_choice else "none"
 
     # Eksekusi Analisis Weibull Q80
-    stn_query = None if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)" else selected_w_stn
+    stn_query = None if selected_w_stn == stn_w_label_kawasan else selected_w_stn
     try:
         weibull_results = calculate_dependable_flow_and_rainfall(
             df=df_w_target,
@@ -1054,15 +1186,16 @@ with tab_weibull:
             st.markdown("##### 📌 Informasi Cakupan Data Pengamatan (Stasiun & Tahun)")
             col_inf_stn, col_inf_yr = st.columns([1.3, 1.0])
             with col_inf_stn:
-                if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)":
-                    st.markdown(f"**📍 Stasiun Pengamatan:** **Semua Stasiun (Rata-rata Kawasan)** — Total **{n_stn} Stasiun**")
-                    st.caption("Daftar kode stasiun pengamatan yang dirata-ratakan:")
+                if selected_w_stn == stn_w_label_kawasan:
+                    st.markdown(f"**📍 Stasiun Pengamatan:** **Rata-rata Kawasan ({n_stn} Stasiun Terpilih di Sidebar)**")
+                    st.caption("Daftar kode stasiun pengamatan yang dirata-ratakan sesuai filter sidebar:")
                     st.code(stn_str_list, language="text")
                 else:
                     st.markdown(f"**📍 Stasiun Pengamatan:** **Stasiun {selected_w_stn}** (1 Stasiun Terpilih)")
-                    st.caption("Data pengamatan difokuskan murni pada stasiun ini.")
+                    st.caption(f"Data pengamatan difokuskan murni pada Stasiun {selected_w_stn} dari {len(selected_stations)} stasiun terpilih di sidebar.")
             with col_inf_yr:
-                st.markdown(f"**📅 Deret Tahun Pengamatan:** **{yr_range_label}**")
+                is_sb_w = "Sesuai Filter" in weibull_src_choice
+                st.markdown(f"**📅 Deret Tahun Pengamatan:** **{yr_range_label}** {'*(Sesuai Filter Sidebar)*' if is_sb_w else '*(Seluruh Data Historis)*'}")
                 st.caption(f"Tahun-tahun pengamatan yang digunakan dalam rumus ranking Weibull $P = [m / (N+1)] \\times 100\\%$:")
                 st.code(yr_str_list, language="text")
 
@@ -1079,8 +1212,8 @@ with tab_weibull:
         # Tabel Utama
         with st.container(border=True):
             st.markdown(f"##### 📋 Tabel Curah Hujan & Debit Andalan Q80 Bulanan ({crop_key})")
-            if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)":
-                stn_caption = f"Semua Stasiun ({n_stn} Stasiun Pengamatan)"
+            if selected_w_stn == stn_w_label_kawasan:
+                stn_caption = f"Rata-rata Kawasan ({n_stn} Stasiun Terpilih di Sidebar)"
             else:
                 stn_caption = f"Stasiun {selected_w_stn}"
             st.caption(f"Hasil perhitungan untuk **{stn_caption}** | Deret Data: **{yr_range_label}** | Jenis Tanaman: **{crop_key}** (Koefisien C = {weibull_results.get('crop_coef', 0.7):.2f})")
@@ -1213,7 +1346,7 @@ with tab_weibull:
                 with st.spinner("Menyiapkan file Excel Weibull (lengkap dengan grafik visual & 2 sheet)..."):
                     wb_excel_out = export_weibull_to_excel(
                         weibull_data=wb_exp_dict,
-                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice}
+                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice, "instansi": "DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL", "proyek": "Bidang Sumber Daya Air & Irigasi"}
                     )
                 st.download_button(
                     label="📥 Unduh Laporan Weibull (Excel .xlsx)",
@@ -1227,7 +1360,7 @@ with tab_weibull:
                 with st.spinner("Menyiapkan file PDF Weibull (lengkap dengan visual grafik & kurva durasi)..."):
                     wb_pdf_out = export_weibull_to_pdf(
                         weibull_data=wb_exp_dict,
-                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice}
+                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice, "instansi": "DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL", "proyek": "Bidang Sumber Daya Air & Irigasi"}
                     )
                 st.download_button(
                     label="📄 Unduh Laporan Weibull (PDF .pdf)",
@@ -1245,9 +1378,20 @@ with tab_hydro:
         st.subheader("🌊 Analisis Frekuensi Hidrologi & Curah Hujan Rancangan (Kala Ulang)")
         st.caption("Perhitungan curah hujan rancangan metode Gumbel dan Log Pearson Tipe III untuk kala ulang T = 2, 5, 10, 25, 50, dan 100 Tahun (Standar SNI & PU Perencanaan Bangunan Air/Drainase).")
 
-        col_h_stn, col_h_infill = st.columns([1.5, 2.5])
+        col_h_stn, col_h_yr, col_h_infill = st.columns([1.2, 1.5, 1.3])
         with col_h_stn:
             h_stn = st.selectbox("Pilih Stasiun untuk Dianalisis:", selected_stations, key="hydro_stn_select")
+        with col_h_yr:
+            min_filter_yr = min(years_in_filter) if years_in_filter else 2015
+            max_filter_yr = max(years_in_filter) if years_in_filter else 2026
+            opt_h_sidebar = f"Sesuai Filter Sidebar ({min_filter_yr} - {max_filter_yr}, N = {len(years_in_filter)} Thn)"
+            opt_h_all = "Seluruh Data Historis (2015 - 2026)"
+            hydro_yr_choice = st.radio(
+                "Deret Tahun Pengamatan:",
+                [opt_h_sidebar, opt_h_all],
+                key="hydro_yr_choice",
+                help="Sesuaikan deret tahun dengan filter di sidebar atau gunakan seluruh data historis untuk analisis kala ulang hidrologi."
+            )
         with col_h_infill:
             hydro_infill_choice = st.radio(
                 "Perlakuan Data Alat Rusak:",
@@ -1255,15 +1399,33 @@ with tab_hydro:
                     "Estimasi Otomatis (Infilling SNI/WMO)",
                     "Data Asli (Tanpa Estimasi)"
                 ],
-                horizontal=True,
                 key="hydro_infill_choice",
                 help="Standar SNI 19-6738-2002: Jika alat rusak bertepatan dengan hujan lebat di kawasan, estimasi stasiun sekitar memastikan puncak Pmax tidak terlewatkan dan deret LP3 memiliki data valid."
             )
 
     if h_stn:
+        if "Sesuai Filter Sidebar" in hydro_yr_choice:
+            df_hydro_target = df_raw[(df_raw["Stasiun"].isin(selected_stations)) & (df_raw["Tahun"].isin(years_in_filter))]
+            h_years_used = years_in_filter
+        else:
+            df_hydro_target = df_raw[df_raw["Stasiun"].isin(selected_stations)]
+            h_years_used = sorted(list(df_hydro_target[df_hydro_target["Stasiun"] == h_stn]["Tahun"].dropna().unique()))
+
         h_method = "auto" if "Estimasi Otomatis" in hydro_infill_choice else "none"
-        stats_p, stn_infill_log = get_station_frequency_stats(df_raw, h_stn, infill_method=h_method)
+        stats_p, stn_infill_log = get_station_frequency_stats(df_hydro_target, h_stn, infill_method=h_method)
         
+        # Info Cakupan Stasiun & Deret Tahun Kala Ulang
+        with st.container(border=True):
+            st.markdown(f"##### 📌 Informasi Cakupan Analisis Kala Ulang: Stasiun {h_stn}")
+            col_inf_h1, col_inf_h2 = st.columns([1.2, 1.1])
+            with col_inf_h1:
+                st.markdown(f"**📍 Stasiun Pengamatan:** **Stasiun {h_stn}** (dari {len(selected_stations)} stasiun terpilih di sidebar)")
+                st.caption(f"Stasiun aktif terpilih di filter sidebar: {', '.join(selected_stations[:10])}{'...' if len(selected_stations) > 10 else ''}")
+            with col_inf_h2:
+                is_sb_h = "Sesuai Filter" in hydro_yr_choice
+                st.markdown(f"**📅 Deret Tahun Pengamatan:** **Tahun {min(h_years_used) if h_years_used else 2015} s/d {max(h_years_used) if h_years_used else 2026}** (N = {len(h_years_used)} Tahun) {'*(Sesuai Filter Sidebar)*' if is_sb_h else '*(Seluruh Data Historis)*'}")
+                st.caption(f"Tahun yang dianalisis: {', '.join(str(y) for y in h_years_used)}")
+
         if stats_p:
             # Metric cards
             with st.container(border=True):
@@ -1281,7 +1443,7 @@ with tab_hydro:
             with col_r1:
                 with st.container(border=True):
                     st.markdown("##### 📋 Tabel Curah Hujan Rancangan (mm)")
-                    design_df = get_design_rainfall_summary(df_raw, h_stn, infill_method=h_method)
+                    design_df = get_design_rainfall_summary(df_hydro_target, h_stn, infill_method=h_method)
                     st.dataframe(design_df, use_container_width=True, hide_index=True)
 
             with col_r2:
@@ -1321,7 +1483,11 @@ with tab_hydro:
                     )
                     st.dataframe(stn_infill_log, use_container_width=True, hide_index=True)
         else:
-            st.info(f"Data stasiun {h_stn} tidak mencukupi untuk melakukan analisis frekuensi (minimal 3 tahun data valid).")
+            st.warning(
+                f"⚠️ Data Stasiun **{h_stn}** pada deret tahun terpilih ({len(h_years_used)} tahun: {min(h_years_used) if h_years_used else '-'}-{max(h_years_used) if h_years_used else '-'}) "
+                "belum mencukupi untuk analisis frekuensi hidrologi (Gumbel & LP3 membutuhkan minimal 3 tahun data pengamatan valid, direkomendasikan ≥ 10 tahun sesuai SNI/PUPR). "
+                "Silakan perlebar rentang tahun pada filter sidebar atau pilih opsi **'Seluruh Data Historis (2015 - 2026)'** di atas."
+            )
 
 
 # ----------------- TAB: INPUT DATA MANUAL -----------------
@@ -1365,10 +1531,11 @@ with tab_input:
                     step=0.1,
                     format="%.1f",
                     disabled=is_rusak,
-                    help="Isian otomatis dinonaktifkan jika status alat RUSAK." if is_rusak else "Ketik 0 jika cuaca cerah/berawan dan tidak ada hujan sama sekali."
+                    key=f"ch_input_single_{'rusak' if is_rusak else 'normal'}",
+                    help="Isian otomatis dinonaktifkan dan bernilai 0.0 jika status alat RUSAK." if is_rusak else "Ketik 0 jika cuaca cerah/berawan dan tidak ada hujan sama sekali."
                 )
                 if is_rusak:
-                    st.warning("⚠️ Alat pengukur berstatus **RUSAK**: Isian curah hujan dinonaktifkan otomatis. Pada tabel dan laporan, data akan dikosongkan dan diarsir hitam sesuai ketentuan.")
+                    st.warning("⚠️ Alat pengukur berstatus **RUSAK**: Isian curah hujan otomatis dinonaktifkan dan bernilai 0.0 mm. Pada tabel dan laporan, data akan dikosongkan dan diarsir hitam sesuai ketentuan.")
                     ch_input = None
 
             submit_single = st.button("💾 Simpan Data Harian", use_container_width=True, type="primary")
@@ -1494,7 +1661,7 @@ with tab_input:
                             step=0.1,
                             format="%.1f",
                             disabled=is_chk_rusak,
-                            key=f"num_ch_tbl_{bulk_stn}_{bulk_yr}_{bulk_m}_{d}",
+                            key=f"num_ch_tbl_{bulk_stn}_{bulk_yr}_{bulk_m}_{d}_{'rsk' if is_chk_rusak else 'nrm'}",
                             label_visibility="collapsed"
                         )
 

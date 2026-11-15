@@ -427,7 +427,8 @@ def calculate_dependable_flow_and_rainfall(
         c_val = crop_c if crop_c is not None else CROP_IRRIGATION_CONFIG.get(crop_type, {}).get("coef", 0.70)
 
         # Pisahkan perhitungan jika 1 stasiun spesifik vs semua stasiun (rata-rata kawasan)
-        if station is not None and str(station).strip() not in ("Semua Stasiun", "Semua Stasiun (Rata-rata Kawasan)"):
+        is_area_avg = (station is None) or any(k in str(station) for k in ["Semua Stasiun", "Rata-rata Kawasan", "Kawasan"])
+        if not is_area_avg:
             stn_filter_str = str(station).strip()
             sub = sub[sub["Stasiun"].astype(str) == stn_filter_str]
             if not infill_log_df.empty:
