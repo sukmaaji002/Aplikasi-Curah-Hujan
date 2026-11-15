@@ -1440,71 +1440,86 @@ with tab_input:
             with col_opt2:
                 bulk_view_style = st.radio(
                     "Pilihan Model Pengisian:",
-                    ["📊 Tabel Grid (Centang / Dropdown per Tanggal)", "📝 Formulir Rinci (Radio Button per Tanggal)"],
+                    [
+                        "📋 Tabel Interaktif (Otomatis Kunci & 0 mm saat Rusak)",
+                        "📊 Grid Spreadsheet (Data Editor)"
+                    ],
                     horizontal=False,
                     key="bulk_view_style_choice"
                 )
 
-            if bulk_view_style == "📊 Tabel Grid (Centang / Dropdown per Tanggal)":
-                grid_data = []
-                for d in range(1, days_in_month + 1):
-                    ex = existing_map.get(d, {"Curah_Hujan": 0.0, "Status": "Normal"})
-                    is_d_rusak = (d in rusak_quick_pick) or (ex["Status"] == "RUSAK")
-                    grid_data.append({
-                        "Hari": d,
-                        "Tanggal": f"{int(bulk_yr)}-{int(bulk_m):02d}-{d:02d}",
-                        "Alat Rusak?": is_d_rusak,
-                        "Pilihan Status": "RUSAK" if is_d_rusak else "Normal",
-                        "Curah Hujan (mm)": 0.0 if is_d_rusak else float(ex["Curah_Hujan"])
-                    })
+            if bulk_view_style == "📋 Tabel Interaktif (Otomatis Kunci & 0 mm saat Rusak)":
+                st.info(
+                    f"💡 Menampilkan {days_in_month} hari untuk **Stasiun {bulk_stn}** — Bulan **{MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}**. "
+                    "Ketika kotak **Alat Rusak** dicentang, status otomatis berubah menjadi **RUSAK**, dan kotak isian curah hujan otomatis **terkunci (tidak dapat diisi) serta nilainya berubah menjadi 0.0 mm**."
+                )
 
-                df_grid = pd.DataFrame(grid_data)
+                # Header Tabel
+                with st.container(border=True):
+                    ch1, ch2, ch3, ch4, ch5, ch6 = st.columns([0.8, 1.8, 1.8, 1.5, 2.0, 2.5])
+                    ch1.markdown("**Hari**")
+                    ch2.markdown("**Tanggal**")
+                    ch3.markdown("**Alat Rusak?**")
+                    ch4.markdown("**Status**")
+                    ch5.markdown("**Curah Hujan (mm)**")
+                    ch6.markdown("**Keterangan**")
 
-                st.info(f"💡 Menampilkan {days_in_month} hari untuk **Stasiun {bulk_stn}** — Bulan **{MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}**. "
-                        f"Pada masing-masing tanggal, Anda dapat langsung memilih apakah alat **Normal** atau **RUSAK** melalui kotak centang **'Alat Rusak?'** atau dropdown **'Pilihan Status'**.")
+                table_items = {}
+                with st.container(height=520, border=True):
+                    for d in range(1, days_in_month + 1):
+                        ex = existing_map.get(d, {"Curah_Hujan": 0.0, "Status": "Normal"})
+                        init_rusak = (d in rusak_quick_pick) or (ex["Status"] == "RUSAK")
 
-                edited_df = st.data_editor(
-                    df_grid,
-                    use_container_width=True,
-                    num_rows="fixed",
-                    height=min(520, days_in_month * 36 + 60),
-                    column_config={
-                        "Hari": st.column_config.NumberColumn("Hari", disabled=True),
-                        "Tanggal": st.column_config.TextColumn("Tanggal", disabled=True),
-                        "Alat Rusak?": st.column_config.CheckboxColumn(
-                            "Alat Rusak?",
-                            help="Centang kotak ini jika pada tanggal ini alat RUSAK (isian curah hujan otomatis dikosongkan dan diarsir hitam)",
-                            default=False
-                        ),
-                        "Pilihan Status": st.column_config.SelectboxColumn(
-                            "Pilihan Status",
-                            options=["Normal", "RUSAK"],
-                            help="Pilih Normal atau RUSAK",
-                            required=True
-                        ),
-                        "Curah Hujan (mm)": st.column_config.NumberColumn(
-                            "Curah Hujan (mm)",
+                        c1, c2, c3, c4, c5, c6 = st.columns([0.8, 1.8, 1.8, 1.5, 2.0, 2.5])
+                        c1.markdown(f"**{d}**")
+                        c2.markdown(f"`{int(bulk_yr)}-{int(bulk_m):02d}-{d:02d}`")
+
+                        is_chk_rusak = c3.checkbox(
+                            "Alat Rusak",
+                            value=init_rusak,
+                            key=f"chk_rsk_tbl_{bulk_stn}_{bulk_yr}_{bulk_m}_{d}",
+                            help=f"Centang jika alat rusak pada tgl {d}"
+                        )
+
+                        if is_chk_rusak:
+                            c4.markdown("⬛ **RUSAK**")
+                        else:
+                            c4.markdown("🟢 **Normal**")
+
+                        ch_val = c5.number_input(
+                            f"CH Tgl {d}",
                             min_value=0.0,
                             max_value=500.0,
+                            value=0.0 if is_chk_rusak else float(ex["Curah_Hujan"]),
                             step=0.1,
-                            format="%.1f mm",
-                            help="Isi curah hujan harian (mm). Jika status RUSAK, nilai curah hujan otomatis diabaikan dan dikosongkan."
+                            format="%.1f",
+                            disabled=is_chk_rusak,
+                            key=f"num_ch_tbl_{bulk_stn}_{bulk_yr}_{bulk_m}_{d}",
+                            label_visibility="collapsed"
                         )
-                    },
-                    key=f"editor_{bulk_stn}_{bulk_yr}_{bulk_m}"
-                )
+
+                        if is_chk_rusak:
+                            c6.markdown("🔒 *Terkunci 0.0 mm (Arsir Hitam)*")
+                            table_items[d] = {
+                                "Hari": d,
+                                "Curah_Hujan": None,
+                                "Status": "RUSAK"
+                            }
+                        else:
+                            if ch_val > 0:
+                                c6.markdown(f"🌧️ *Hujan {ch_val:.1f} mm*")
+                            else:
+                                c6.markdown("☀️ *Cerah (0.0 mm)*")
+                            table_items[d] = {
+                                "Hari": d,
+                                "Curah_Hujan": ch_val,
+                                "Status": "Normal"
+                            }
 
                 col_save1, col_save2 = st.columns([2, 4])
                 with col_save1:
-                    if st.button(f"💾 Simpan Seluruh Bulan ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})", type="primary", use_container_width=True, key="btn_save_grid"):
-                        daily_items = []
-                        for _, r in edited_df.iterrows():
-                            is_rsk = bool(r.get("Alat Rusak?", False)) or (str(r.get("Pilihan Status", "Normal")).strip() == "RUSAK")
-                            daily_items.append({
-                                "Hari": int(r["Hari"]),
-                                "Curah_Hujan": None if is_rsk else float(r.get("Curah Hujan (mm)", 0.0)),
-                                "Status": "RUSAK" if is_rsk else "Normal"
-                            })
+                    if st.button(f"💾 Simpan Seluruh Bulan ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})", type="primary", use_container_width=True, key="btn_save_interactive"):
+                        daily_items = list(table_items.values())
                         new_df = save_bulk_monthly_records(
                             df_main=df_raw,
                             station=bulk_stn,
@@ -1521,49 +1536,60 @@ with tab_input:
                             st.error("Gagal menyimpan data.")
 
             else:
-                # Mode Formulir Rinci per Tanggal (dengan Radio Button Normal / RUSAK untuk tiap tanggal)
-                st.info(f"💡 Mode Formulir Rinci: Masing-masing tanggal dari hari ke-1 s/d {days_in_month} memiliki pilihan radio **Normal** atau **RUSAK**. "
-                        f"Jika memilih RUSAK, kotak curah hujan otomatis terkunci/dinonaktifkan.")
-                
-                form_items = {}
-                cols_form = st.columns(3)
+                # Mode Spreadsheet Grid
+                grid_data = []
                 for d in range(1, days_in_month + 1):
                     ex = existing_map.get(d, {"Curah_Hujan": 0.0, "Status": "Normal"})
-                    init_rusak = (d in rusak_quick_pick) or (ex["Status"] == "RUSAK")
-                    with cols_form[(d - 1) % 3]:
-                        with st.container(border=True):
-                            st.markdown(f"**📅 Tanggal {d}** ({int(bulk_yr)}-{int(bulk_m):02d}-{d:02d})")
-                            stat_radio = st.radio(
-                                f"Status Alat Tgl {d}:",
-                                ["Normal", "RUSAK"],
-                                index=1 if init_rusak else 0,
-                                horizontal=True,
-                                key=f"rad_stat_{bulk_stn}_{bulk_yr}_{bulk_m}_{d}",
-                                label_visibility="collapsed"
-                            )
-                            is_rad_rusak = (stat_radio == "RUSAK")
-                            ch_input_val = st.number_input(
-                                f"Curah Hujan Tgl {d} (mm):",
-                                min_value=0.0,
-                                max_value=500.0,
-                                value=0.0 if is_rad_rusak else float(ex["Curah_Hujan"]),
-                                step=0.1,
-                                format="%.1f",
-                                disabled=is_rad_rusak,
-                                key=f"num_ch_{bulk_stn}_{bulk_yr}_{bulk_m}_{d}"
-                            )
-                            if is_rad_rusak:
-                                st.caption("🔒 Status: RUSAK (Isian Terkunci)")
-                            form_items[d] = {
-                                "Hari": d,
-                                "Curah_Hujan": None if is_rad_rusak else ch_input_val,
-                                "Status": "RUSAK" if is_rad_rusak else "Normal"
-                            }
+                    is_d_rusak = (d in rusak_quick_pick) or (ex["Status"] == "RUSAK")
+                    grid_data.append({
+                        "Hari": d,
+                        "Tanggal": f"{int(bulk_yr)}-{int(bulk_m):02d}-{d:02d}",
+                        "Status Alat": "RUSAK" if is_d_rusak else "Normal",
+                        "Curah Hujan (mm)": 0.0 if is_d_rusak else float(ex["Curah_Hujan"])
+                    })
 
-                col_f_save1, col_f_save2 = st.columns([2, 4])
-                with col_f_save1:
-                    if st.button(f"💾 Simpan dari Formulir Rinci ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})", type="primary", use_container_width=True, key="btn_save_form"):
-                        daily_items = list(form_items.values())
+                df_grid = pd.DataFrame(grid_data)
+
+                st.info(f"💡 Mode Grid Spreadsheet: Ubah kolom **Status Alat** menjadi **RUSAK** jika alat rusak. Nilai curah hujan untuk status RUSAK otomatis dikosongkan dan diarsir hitam saat disimpan.")
+
+                edited_df = st.data_editor(
+                    df_grid,
+                    use_container_width=True,
+                    num_rows="fixed",
+                    height=min(520, days_in_month * 36 + 60),
+                    column_config={
+                        "Hari": st.column_config.NumberColumn("Hari", disabled=True),
+                        "Tanggal": st.column_config.TextColumn("Tanggal", disabled=True),
+                        "Status Alat": st.column_config.SelectboxColumn(
+                            "Status Alat",
+                            options=["Normal", "RUSAK"],
+                            help="Pilih Normal atau RUSAK. Jika RUSAK, isian otomatis menjadi nol dan diarsir hitam.",
+                            required=True
+                        ),
+                        "Curah Hujan (mm)": st.column_config.NumberColumn(
+                            "Curah Hujan (mm)",
+                            min_value=0.0,
+                            max_value=500.0,
+                            step=0.1,
+                            format="%.1f mm",
+                            help="Isi curah hujan harian (mm). Jika status RUSAK, nilai curah hujan otomatis diabaikan dan bernilai nol."
+                        )
+                    },
+                    key=f"editor_{bulk_stn}_{bulk_yr}_{bulk_m}"
+                )
+
+                col_save1, col_save2 = st.columns([2, 4])
+                with col_save1:
+                    if st.button(f"💾 Simpan dari Grid ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})", type="primary", use_container_width=True, key="btn_save_grid"):
+                        daily_items = []
+                        for _, r in edited_df.iterrows():
+                            stat_r = str(r.get("Status Alat", "Normal")).strip()
+                            is_rsk = (stat_r == "RUSAK")
+                            daily_items.append({
+                                "Hari": int(r["Hari"]),
+                                "Curah_Hujan": None if is_rsk else float(r.get("Curah Hujan (mm)", 0.0)),
+                                "Status": "RUSAK" if is_rsk else "Normal"
+                            })
                         new_df = save_bulk_monthly_records(
                             df_main=df_raw,
                             station=bulk_stn,
