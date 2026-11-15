@@ -460,8 +460,9 @@ cross_monthly_export = get_cross_station_monthly_matrix(df_for_matrices, months=
 pmax_export = get_pmax_cross_matrix(df_for_matrices)
 
 # Hitung data Debit Andalan (Metode Weibull Q80) untuk diekspor ke Excel
+stn_filter_wb = df_raw[df_raw["Stasiun"].isin(selected_stations)] if selected_stations else df_raw
 weibull_export = calculate_dependable_flow_and_rainfall(
-    df=filtered_df,
+    df=stn_filter_wb,
     station=None,
     crop_type="Padi"
 )
@@ -883,10 +884,10 @@ with tab_weibull:
             "khusus keandalan 80% (Q80) untuk perencanaan irigasi & pertanian sesuai Standar Perencanaan Irigasi KP-01 Ditjen Pengairan PUPR."
         )
 
-    # Box Pengaturan Parameter (Hanya Data Curah Hujan & Jenis Tanaman, Tanpa Luas DAS)
+    # Box Pengaturan Parameter (Data Curah Hujan, Jenis Tanaman & Deret Data Historis)
     with st.container(border=True):
         st.markdown("##### 🌾 Parameter Irigasi & Pertanian")
-        col_w_stn, col_w_crop = st.columns([1.5, 2.5])
+        col_w_stn, col_w_crop, col_w_src = st.columns([1.3, 1.5, 1.2])
         with col_w_stn:
             stn_w_options = ["Semua Stasiun (Rata-rata Kawasan)"] + selected_stations
             selected_w_stn = st.selectbox("Pilih Stasiun Pengamatan:", stn_w_options, key="weibull_stn_choice")
@@ -901,6 +902,16 @@ with tab_weibull:
                 horizontal=False,
                 key="crop_type_radio"
             )
+        with col_w_src:
+            weibull_src_choice = st.radio(
+                "Deret Data Waktu (N Tahun):",
+                [
+                    "Seluruh Data Historis (2015-2026, Standar PUPR)",
+                    "Sesuai Filter Sidebar Saat Ini"
+                ],
+                key="weibull_src_choice",
+                help="Sesuai SNI & Standar Perencanaan KP-01 Ditjen Pengairan PUPR, analisis andalan membutuhkan deret data multi-tahun (idealnya >= 10 tahun) untuk memperoleh probabilitas 80% yang valid."
+            )
 
     # Tentukan jenis tanaman
     if "Palawija" in crop_choice:
@@ -910,10 +921,16 @@ with tab_weibull:
     else:
         crop_key = "Padi"
 
+    # Tentukan sumber dataset (Historis lengkap vs Terfilter)
+    if "Seluruh Data Historis" in weibull_src_choice:
+        df_w_target = df_raw
+    else:
+        df_w_target = filtered_df
+
     # Eksekusi Analisis Weibull Q80
     stn_query = None if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)" else selected_w_stn
     weibull_results = calculate_dependable_flow_and_rainfall(
-        df=filtered_df,
+        df=df_w_target,
         station=stn_query,
         crop_type=crop_key
     )
@@ -954,13 +971,13 @@ with tab_weibull:
             st.caption(f"Hasil perhitungan untuk **{selected_w_stn}** — Jenis Tanaman: **{crop_key}** (Koefisien C = {weibull_results.get('crop_coef', 0.7):.2f})")
             
             w_col_config = {
-                "No": st.column_config.NumberColumn(format="%d"),
-                "Hari": st.column_config.NumberColumn(format="%d hari"),
-                "R80 Curah Hujan (mm)": st.column_config.NumberColumn(format="%.1f mm"),
-                "Koefisien (C)": st.column_config.NumberColumn(format="%.2f"),
-                "Q80 Andalan Irigasi (mm)": st.column_config.NumberColumn(format="%.1f mm"),
-                "Q80 Rata-rata (mm/hari)": st.column_config.NumberColumn(format="%.2f mm/hari"),
-                "Q80 Debit Irigasi (L/detik/ha)": st.column_config.NumberColumn(format="%.3f L/s/ha"),
+                "No": st.column_config.NumberColumn("No", format="%d"),
+                "Hari": st.column_config.NumberColumn("Hari", format="%d"),
+                "R80 Curah Hujan (mm)": st.column_config.NumberColumn("R80 Curah Hujan (mm)", format="%.1f"),
+                "Koefisien (C)": st.column_config.NumberColumn("Koefisien (C)", format="%.2f"),
+                "Q80 Andalan Irigasi (mm)": st.column_config.NumberColumn("Q80 Andalan Irigasi (mm)", format="%.1f"),
+                "Q80 Rata-rata (mm/hari)": st.column_config.NumberColumn("Q80 Rata-rata (mm/hari)", format="%.2f"),
+                "Q80 Debit Irigasi (L/detik/ha)": st.column_config.NumberColumn("Q80 Debit Irigasi (L/detik/ha)", format="%.3f"),
             }
 
             st.dataframe(
@@ -1002,8 +1019,8 @@ with tab_weibull:
         with col_wg2:
             with st.container(border=True):
                 st.markdown("##### 📈 Kurva Durasi Curah Hujan Tahunan (Weibull Duration Curve)")
-                ann_rank = weibull_results["annual_ranking"]
-                if not ann_rank.empty:
+                ann_rank = weibull_results.get("annual_ranking", pd.DataFrame())
+                if not ann_rank.empty and len(ann_rank) > 1:
                     fig_w_curve = go.Figure()
                     fig_w_curve.add_trace(go.Scatter(
                         x=ann_rank["Probabilitas P (%)"],
@@ -1022,29 +1039,38 @@ with tab_weibull:
                         hovermode="x unified"
                     )
                     st.plotly_chart(fig_w_curve, use_container_width=True)
+                elif not ann_rank.empty:
+                    st.info("Kurva durasi memerlukan minimal 2 tahun data historis (N ≥ 2). Pilih opsi 'Seluruh Data Historis' di atas.")
                 else:
                     st.caption("Data belum cukup untuk membentuk kurva durasi.")
 
         # Tabel Rincian Peringkat Weibull
         with st.expander("🔍 Lihat Tabel Peringkat & Perhitungan Lengkap Rumus Weibull per Bulan / Tahunan"):
-            sel_m_inspect = st.selectbox(
-                "Pilih Periode untuk Memeriksa Urutan Data (Ranking m & P%):",
-                list(weibull_results["rankings"].keys()),
-                index=len(weibull_results["rankings"]) - 1
-            )
-            ranking_inspect_df = weibull_results["rankings"].get(sel_m_inspect, pd.DataFrame())
-            if not ranking_inspect_df.empty:
-                st.markdown(f"**Tabel Peringkat Periode: {sel_m_inspect} (Jumlah Data N = {len(ranking_inspect_df)})**")
-                st.dataframe(
-                    ranking_inspect_df,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Peringkat (m)": st.column_config.NumberColumn(format="%d"),
-                        "Nilai": st.column_config.NumberColumn("Curah Hujan (mm)", format="%.1f mm"),
-                        "Probabilitas P (%)": st.column_config.NumberColumn("Probabilitas P (%) = [m/(N+1)]*100", format="%.2f %%")
-                    }
+            rank_keys = list(weibull_results.get("rankings", {}).keys())
+            if rank_keys:
+                default_idx = len(rank_keys) - 1
+                sel_m_inspect = st.selectbox(
+                    "Pilih Periode untuk Memeriksa Urutan Data (Ranking m & P%):",
+                    rank_keys,
+                    index=default_idx
                 )
+                ranking_inspect_df = weibull_results["rankings"].get(sel_m_inspect, pd.DataFrame())
+                if not ranking_inspect_df.empty:
+                    st.markdown(f"**Tabel Peringkat Periode: {sel_m_inspect} (Jumlah Data N = {len(ranking_inspect_df)} Tahun)**")
+                    st.dataframe(
+                        ranking_inspect_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Peringkat (m)": st.column_config.NumberColumn("Peringkat (m)", format="%d"),
+                            "Nilai": st.column_config.NumberColumn("Curah Hujan (mm)", format="%.1f"),
+                            "Probabilitas P (%)": st.column_config.NumberColumn("Probabilitas P (%) = [m/(N+1)]*100", format="%.2f")
+                        }
+                    )
+                else:
+                    st.caption(f"Data pengamatan pada periode {sel_m_inspect} tidak tersedia.")
+            else:
+                st.caption("Data peringkat Weibull belum tersedia.")
     else:
         st.info("Data curah hujan tidak mencukupi untuk melakukan analisis Weibull.")
 

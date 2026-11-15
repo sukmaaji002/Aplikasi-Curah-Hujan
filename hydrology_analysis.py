@@ -275,8 +275,8 @@ def calculate_dependable_flow_and_rainfall(
     c_val = crop_c if crop_c is not None else CROP_IRRIGATION_CONFIG.get(crop_type, {}).get("coef", 0.70)
 
     # Pisahkan perhitungan jika 1 stasiun spesifik vs semua stasiun (rata-rata kawasan)
-    if station is not None and station != "Semua Stasiun" and station != "Semua Stasiun (Rata-rata Kawasan)":
-        sub = sub[sub["Stasiun"] == station]
+    if station is not None and str(station).strip() not in ("Semua Stasiun", "Semua Stasiun (Rata-rata Kawasan)"):
+        sub = sub[sub["Stasiun"].astype(str) == str(station).strip()]
         if sub.empty:
             return {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_info": {}}
         monthly_matrix = sub.groupby(["Tahun", "Bulan"])["Curah_Hujan"].sum().unstack(level="Bulan")
