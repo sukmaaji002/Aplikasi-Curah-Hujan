@@ -1003,6 +1003,17 @@ with tab_weibull:
     if not weibull_results["summary"].empty:
         w_sum = weibull_results["summary"]
         
+        # Ekstrak informasi stasiun dan deret tahun yang dianalisis
+        st_years = weibull_results.get("years_used", sorted([int(y) for y in df_w_target["Tahun"].dropna().unique()]))
+        st_stations = weibull_results.get("stations_used", sorted([str(s) for s in df_w_target["Stasiun"].dropna().unique()]))
+        min_yr = min(st_years) if st_years else 2015
+        max_yr = max(st_years) if st_years else 2026
+        n_yr = len(st_years)
+        n_stn = len(st_stations)
+        stn_str_list = ", ".join(st_stations)
+        yr_str_list = ", ".join(str(y) for y in st_years)
+        yr_range_label = f"Tahun {min_yr} s/d {max_yr} (N = {n_yr} Tahun)"
+
         # Metric Highlight Cards (Kotak-kotak KPI)
         annual_row_match = w_sum[w_sum["Bulan / Periode"] == "TOTAL TAHUNAN"]
         if not annual_row_match.empty:
@@ -1030,10 +1041,31 @@ with tab_weibull:
                     help="Rata-rata ketersediaan debit irigasi per hektar lahan pertanian"
                 )
 
+        # Kotak Informasi Rinci Stasiun & Deret Tahun Pengamatan
+        with st.container(border=True):
+            st.markdown("##### 📌 Informasi Cakupan Data Pengamatan (Stasiun & Tahun)")
+            col_inf_stn, col_inf_yr = st.columns([1.3, 1.0])
+            with col_inf_stn:
+                if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)":
+                    st.markdown(f"**📍 Stasiun Pengamatan:** **Semua Stasiun (Rata-rata Kawasan)** — Total **{n_stn} Stasiun**")
+                    st.caption("Daftar kode stasiun pengamatan yang dirata-ratakan:")
+                    st.code(stn_str_list, language="text")
+                else:
+                    st.markdown(f"**📍 Stasiun Pengamatan:** **Stasiun {selected_w_stn}** (1 Stasiun Terpilih)")
+                    st.caption("Data pengamatan difokuskan murni pada stasiun ini.")
+            with col_inf_yr:
+                st.markdown(f"**📅 Deret Tahun Pengamatan:** **{yr_range_label}**")
+                st.caption(f"Tahun-tahun pengamatan yang digunakan dalam rumus ranking Weibull $P = [m / (N+1)] \\times 100\\%$:")
+                st.code(yr_str_list, language="text")
+
         # Tabel Utama
         with st.container(border=True):
             st.markdown(f"##### 📋 Tabel Curah Hujan & Debit Andalan Q80 Bulanan ({crop_key})")
-            st.caption(f"Hasil perhitungan untuk **{selected_w_stn}** — Jenis Tanaman: **{crop_key}** (Koefisien C = {weibull_results.get('crop_coef', 0.7):.2f})")
+            if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)":
+                stn_caption = f"Semua Stasiun ({n_stn} Stasiun Pengamatan)"
+            else:
+                stn_caption = f"Stasiun {selected_w_stn}"
+            st.caption(f"Hasil perhitungan untuk **{stn_caption}** | Deret Data: **{yr_range_label}** | Jenis Tanaman: **{crop_key}** (Koefisien C = {weibull_results.get('crop_coef', 0.7):.2f})")
             
             w_col_config = {
                 "No": st.column_config.NumberColumn("No", format="%d"),
@@ -1146,6 +1178,11 @@ with tab_weibull:
             wb_exp_dict["station"] = selected_w_stn
             wb_exp_dict["crop_type"] = crop_key
             wb_exp_dict["data_source_mode"] = weibull_src_choice
+            wb_exp_dict["stations_list_str"] = stn_str_list
+            wb_exp_dict["years_list_str"] = yr_str_list
+            wb_exp_dict["year_range_str"] = yr_range_label
+            wb_exp_dict["n_stations"] = n_stn
+            wb_exp_dict["n_years"] = n_yr
 
             col_w_dl1, col_w_dl2, col_w_dl_sp = st.columns([2, 2, 3])
 

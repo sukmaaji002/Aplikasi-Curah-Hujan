@@ -1166,17 +1166,30 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
 
     # Info parameters block
     ws1["A4"] = "Stasiun Pengamatan:"
-    ws1["B4"] = str(stn_name)
-    ws1["A5"] = "Komoditas Pertanian:"
-    ws1["B5"] = f"{crop_name} (Koefisien C = {crop_coef:.2f})"
-    ws1["A6"] = "Tingkat Keandalan:"
-    ws1["B6"] = "P = 80% (Q80 Irigasi) | Rumus Weibull: P = [m / (N + 1)] x 100%"
+    ws1["B4"] = f"{stn_name} ({weibull_data.get('n_stations', 1)} Stasiun)" if "Semua" in str(stn_name) else f"Stasiun {stn_name}"
+    ws1["D4"] = "Deret Tahun:"
+    ws1["E4"] = str(weibull_data.get('year_range_str', ''))
+
+    ws1["A5"] = "Daftar Stasiun:"
+    ws1["B5"] = str(weibull_data.get('stations_list_str', stn_name))
+    ws1["D5"] = "Daftar Tahun:"
+    ws1["E5"] = str(weibull_data.get('years_list_str', ''))
+
+    ws1["A6"] = "Komoditas Pertanian:"
+    ws1["B6"] = f"{crop_name} (Koefisien C = {crop_coef:.2f})"
+    ws1["D6"] = "Tingkat Keandalan:"
+    ws1["E6"] = "P = 80% (Q80 Irigasi) | P = [m / (N + 1)] x 100%"
+
     ws1["A7"] = "Waktu Pembuatan:"
     ws1["B7"] = datetime.datetime.now().strftime("%d %B %Y %H:%M WIB")
+    ws1["D7"] = "Standar Perencanaan:"
+    ws1["E7"] = "KP-01 Irigasi Ditjen SDA Kementerian PUPR"
 
     for r_p in range(4, 8):
         ws1[f"A{r_p}"].font = font_bold
         ws1[f"B{r_p}"].font = font_regular
+        ws1[f"D{r_p}"].font = font_bold
+        ws1[f"E{r_p}"].font = font_regular
 
     # KPI Summary Cards in row 9-10
     tot_row = wb_sum[wb_sum["Bulan / Periode"] == "TOTAL TAHUNAN"] if not wb_sum.empty else pd.DataFrame()
@@ -1481,18 +1494,32 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
     ))
 
     # Meta Info Table
+    stn_list_str = weibull_data.get("stations_list_str", "")
+    yr_range_str = weibull_data.get("year_range_str", "")
+    yr_list_str = weibull_data.get("years_list_str", "")
+    n_stn = weibull_data.get("n_stations", 1)
+    n_yr = weibull_data.get("n_years", 1)
+
+    stn_desc = f"<b>Stasiun Pengamatan:</b> {stn_label}"
+    if "Semua" in str(stn_label) and stn_list_str:
+        stn_desc += f"<br/><font size=7 color='#4B5563'><b>Daftar {n_stn} Stasiun:</b> {stn_list_str}</font>"
+
+    yr_desc = f"<b>Deret Tahun Pengamatan:</b> {yr_range_str}"
+    if yr_list_str:
+        yr_desc += f"<br/><font size=7 color='#4B5563'><b>Tahun (N = {n_yr}):</b> {yr_list_str}</font>"
+
     meta_cells = [
         [
-            Paragraph(f"<b>Stasiun Pengamatan:</b> {stn_label}", meta_style),
-            Paragraph(f"<b>Tingkat Keandalan:</b> P = 80% (Q80 Irigasi & Pertanian)", meta_style)
+            Paragraph(stn_desc, meta_style),
+            Paragraph(yr_desc, meta_style)
         ],
         [
             Paragraph(f"<b>Komoditas Tanaman:</b> {crop_label} (Koefisien C = {crop_c:.2f})", meta_style),
-            Paragraph(f"<b>Metode & Rumus:</b> Weibull: P = [m / (N + 1)] x 100%", meta_style)
+            Paragraph(f"<b>Tingkat Keandalan:</b> P = 80% (Q80 Irigasi) | Weibull P = [m / (N + 1)] x 100%", meta_style)
         ],
         [
             Paragraph(f"<b>Basis Data Waktu:</b> {basis_label}", meta_style),
-            Paragraph(f"<b>Status Sistem:</b> Terverifikasi Standar KP-01 Ditjen SDA", meta_style)
+            Paragraph(f"<b>Standar Perencanaan:</b> KP-01 Irigasi Ditjen SDA Kementerian PUPR", meta_style)
         ]
     ]
     meta_t = Table(meta_cells, colWidths=[380, 380])

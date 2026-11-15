@@ -1,3 +1,4 @@
+import re
 import pandas as pd
 import numpy as np
 
@@ -297,6 +298,13 @@ def calculate_dependable_flow_and_rainfall(
             stn_y = sub.groupby(["Stasiun", "Tahun"])["Curah_Hujan"].sum().reset_index()
             annual_series = stn_y.groupby("Tahun")["Curah_Hujan"].mean()
 
+        def _natural_stn_sort(s):
+            m = re.match(r"^(\d+)([a-zA-Z]*)$", str(s).strip())
+            return (int(m.group(1)), m.group(2).lower()) if m else (9999, str(s).lower())
+
+        stations_used = sorted([str(s) for s in sub["Stasiun"].dropna().unique()], key=_natural_stn_sort)
+        years_used = sorted([int(y) for y in sub["Tahun"].dropna().unique()])
+
         summary_rows = []
         rankings_dict = {}
 
@@ -353,7 +361,11 @@ def calculate_dependable_flow_and_rainfall(
             "rankings": rankings_dict,
             "annual_ranking": annual_rank,
             "crop_type": crop_type,
-            "crop_coef": c_val
+            "crop_coef": c_val,
+            "stations_used": stations_used,
+            "years_used": years_used,
+            "n_years": len(years_used),
+            "n_stations": len(stations_used)
         }
     except Exception as e:
         return {
