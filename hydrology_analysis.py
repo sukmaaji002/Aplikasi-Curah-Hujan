@@ -38,12 +38,122 @@ def get_yn_sn(n: int):
     # Interpolasi atau asimtotik
     return 0.5772, 1.2825
 
-def get_pmax_matrix(df: pd.DataFrame) -> pd.DataFrame:
+def infill_missing_rainfall(
+    df: pd.DataFrame,
+    method: str = "neighbor_mean"
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Pengisian Data Hilang / Alat Rusak (Infilling Missing Data) sesuai Standar SNI 19-6738-2002, WMO, dan KP-01 Ditjen SDA PUPR.
+    
+    Metode:
+    - 'neighbor_mean' (Standar SNI/WMO): Mengestimasi curah hujan berdasarkan rata-rata stasiun pemantau aktif lain di kawasan pada tanggal yang sama.
+    - 'prorata' (Standar KP-01 PUPR): Normalisasi rata-rata harian operasional stasiun pada bulan bersangkutan.
+    - 'none': Tanpa estimasi (data observasi murni apa adanya).
+    
+    Returns:
+        (df_infilled, log_df)
+    """
+    if df.empty or method == "none":
+        return df.copy(), pd.DataFrame()
+
+    df_out = df.copy()
+    damaged_mask = (df_out["Status"] == "RUSAK") | (df_out["Curah_Hujan"].isna())
+    damaged_idx = df_out[damaged_mask].index
+
+    if len(damaged_idx) == 0:
+        return df_out, pd.DataFrame()
+
+    log_rows = []
+
+    if method in ("neighbor_mean", "auto"):
+        valid_obs = df_out[df_out["Curah_Hujan"].notna()]
+        date_stats = valid_obs.groupby("Tanggal")["Curah_Hujan"].agg(["mean", "count"])
+        stn_month_means = valid_obs.groupby(["Stasiun", "Tahun", "Bulan"])["Curah_Hujan"].mean()
+
+        for idx in damaged_idx:
+            row = df_out.loc[idx]
+            tgl = row["Tanggal"]
+            stn = row["Stasiun"]
+            yr = row["Tahun"]
+            mo = row["Bulan"]
+            hari = row.get("Hari", getattr(tgl, "day", 1))
+
+            est_val = None
+            source = ""
+            ref_count = 0
+
+            if tgl in date_stats.index and date_stats.loc[tgl, "count"] > 0:
+                est_val = round(float(date_stats.loc[tgl, "mean"]), 1)
+                ref_count = int(date_stats.loc[tgl, "count"])
+                source = f"Rata-rata {ref_count} Stasiun Sekitar (SNI/WMO)"
+            elif (stn, yr, mo) in stn_month_means.index and not np.isnan(stn_month_means.loc[(stn, yr, mo)]):
+                est_val = round(float(stn_month_means.loc[(stn, yr, mo)]), 1)
+                source = "Prorata Rata-rata Bulanan Stasiun (KP-01)"
+            else:
+                est_val = 0.0
+                source = "Asumsi Tanpa Hujan (0.0 mm)"
+
+            df_out.at[idx, "Curah_Hujan"] = est_val
+            df_out.at[idx, "Status"] = "ESTIMASI"
+
+            tgl_str = tgl.strftime("%Y-%m-%d") if hasattr(tgl, "strftime") else str(tgl)
+            log_rows.append({
+                "Tanggal": tgl_str,
+                "Stasiun": str(stn),
+                "Tahun": int(yr),
+                "Bulan": int(mo),
+                "Hari": int(hari),
+                "Curah Hujan Estimasi (mm)": est_val,
+                "Metode Estimasi": source,
+                "Stasiun Rujukan": ref_count
+            })
+
+    elif method == "prorata":
+        valid_obs = df_out[df_out["Curah_Hujan"].notna()]
+        stn_month_means = valid_obs.groupby(["Stasiun", "Tahun", "Bulan"])["Curah_Hujan"].mean()
+
+        for idx in damaged_idx:
+            row = df_out.loc[idx]
+            tgl = row["Tanggal"]
+            stn = row["Stasiun"]
+            yr = row["Tahun"]
+            mo = row["Bulan"]
+            hari = row.get("Hari", getattr(tgl, "day", 1))
+
+            if (stn, yr, mo) in stn_month_means.index and not np.isnan(stn_month_means.loc[(stn, yr, mo)]):
+                est_val = round(float(stn_month_means.loc[(stn, yr, mo)]), 1)
+                source = "Prorata Rata-rata Bulanan Stasiun (KP-01)"
+            else:
+                est_val = 0.0
+                source = "Asumsi Tanpa Hujan (0.0 mm)"
+
+            df_out.at[idx, "Curah_Hujan"] = est_val
+            df_out.at[idx, "Status"] = "ESTIMASI"
+
+            tgl_str = tgl.strftime("%Y-%m-%d") if hasattr(tgl, "strftime") else str(tgl)
+            log_rows.append({
+                "Tanggal": tgl_str,
+                "Stasiun": str(stn),
+                "Tahun": int(yr),
+                "Bulan": int(mo),
+                "Hari": int(hari),
+                "Curah Hujan Estimasi (mm)": est_val,
+                "Metode Estimasi": source,
+                "Stasiun Rujukan": 0
+            })
+
+    log_df = pd.DataFrame(log_rows)
+    return df_out, log_df
+
+def get_pmax_matrix(df: pd.DataFrame, infill_method: str = "none") -> pd.DataFrame:
     """
     Menghasilkan tabel matriks curah hujan harian maksimum tahunan (Pmax)
     untuk setiap stasiun dan setiap tahun.
     """
-    valid_df = df[df["Curah_Hujan"].notna()]
+    work_df = df
+    if infill_method != "none":
+        work_df, _ = infill_missing_rainfall(df, method=infill_method)
+    valid_df = work_df[work_df["Curah_Hujan"].notna()]
     if valid_df.empty:
         return pd.DataFrame()
     
@@ -132,12 +242,32 @@ def calculate_log_pearson_3(series: pd.Series, return_periods=(2, 5, 10, 25, 50,
 
     return results
 
-def get_design_rainfall_summary(df: pd.DataFrame, station: str) -> pd.DataFrame:
+def get_station_frequency_stats(df: pd.DataFrame, station: str, infill_method: str = "none") -> tuple:
+    """Mengembalikan parameter statistik hidrologi dan log pengisian data hilang untuk suatu stasiun."""
+    work_df = df
+    stn_log = pd.DataFrame()
+    if infill_method != "none":
+        work_df, infill_log = infill_missing_rainfall(df, method=infill_method)
+        if not infill_log.empty:
+            stn_log = infill_log[infill_log["Stasiun"] == str(station).strip()]
+            
+    sub = work_df[(work_df["Stasiun"] == station) & (work_df["Curah_Hujan"].notna())]
+    if sub.empty:
+        return {}, stn_log
+    pmax_series = sub.groupby("Tahun")["Curah_Hujan"].max()
+    stats = calculate_statistical_parameters(pmax_series)
+    return stats, stn_log
+
+def get_design_rainfall_summary(df: pd.DataFrame, station: str, infill_method: str = "none") -> pd.DataFrame:
     """
     Menghasilkan tabel komparasi curah hujan rancangan (Gumbel & Log Pearson III)
-    untuk satu stasiun pengamatan.
+    untuk satu stasiun pengamatan dengan dukungan pengisian data hilang (infilling).
     """
-    sub = df[(df["Stasiun"] == station) & (df["Curah_Hujan"].notna())]
+    work_df = df
+    if infill_method != "none":
+        work_df, _ = infill_missing_rainfall(df, method=infill_method)
+
+    sub = work_df[(work_df["Stasiun"] == station) & (work_df["Curah_Hujan"].notna())]
     if sub.empty:
         return pd.DataFrame()
 
@@ -253,6 +383,7 @@ def calculate_dependable_flow_and_rainfall(
     *args,
     crop_type: str = "Padi",
     crop_c: float = None,
+    infill_method: str = "none",
     **kwargs
 ) -> dict:
     """
@@ -278,17 +409,34 @@ def calculate_dependable_flow_and_rainfall(
                 elif isinstance(arg, (int, float)) and 0.0 < arg <= 1.0:
                     crop_c = float(arg)
 
-        sub = df[df["Curah_Hujan"].notna()].copy()
+        infill_method = kwargs.get("infill_method", infill_method)
+        infill_log_df = pd.DataFrame()
+        if infill_method != "none":
+            work_df, full_infill_log = infill_missing_rainfall(df, method=infill_method)
+            infill_log_df = full_infill_log
+        else:
+            work_df = df
+
+        sub = work_df[work_df["Curah_Hujan"].notna()].copy()
         if sub.empty:
-            return {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_info": {}}
+            return {
+                "summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(),
+                "crop_info": {}, "infill_count": 0, "infill_log": pd.DataFrame()
+            }
 
         c_val = crop_c if crop_c is not None else CROP_IRRIGATION_CONFIG.get(crop_type, {}).get("coef", 0.70)
 
         # Pisahkan perhitungan jika 1 stasiun spesifik vs semua stasiun (rata-rata kawasan)
         if station is not None and str(station).strip() not in ("Semua Stasiun", "Semua Stasiun (Rata-rata Kawasan)"):
-            sub = sub[sub["Stasiun"].astype(str) == str(station).strip()]
+            stn_filter_str = str(station).strip()
+            sub = sub[sub["Stasiun"].astype(str) == stn_filter_str]
+            if not infill_log_df.empty:
+                infill_log_df = infill_log_df[infill_log_df["Stasiun"] == stn_filter_str]
             if sub.empty:
-                return {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_info": {}}
+                return {
+                    "summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(),
+                    "crop_info": {}, "infill_count": 0, "infill_log": pd.DataFrame()
+                }
             monthly_matrix = sub.groupby(["Tahun", "Bulan"])["Curah_Hujan"].sum().unstack(level="Bulan")
             annual_series = sub.groupby("Tahun")["Curah_Hujan"].sum()
         else:
@@ -365,7 +513,10 @@ def calculate_dependable_flow_and_rainfall(
             "stations_used": stations_used,
             "years_used": years_used,
             "n_years": len(years_used),
-            "n_stations": len(stations_used)
+            "n_stations": len(stations_used),
+            "infill_method": infill_method,
+            "infill_count": len(infill_log_df),
+            "infill_log": infill_log_df
         }
     except Exception as e:
         return {

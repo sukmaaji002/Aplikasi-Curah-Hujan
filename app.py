@@ -46,10 +46,12 @@ from hydrology_analysis import (
     calculate_statistical_parameters,
     calculate_gumbel,
     calculate_log_pearson_3,
+    get_station_frequency_stats,
     get_design_rainfall_summary,
     calculate_weibull_ranking,
     interpolate_weibull_value,
-    calculate_dependable_flow_and_rainfall
+    calculate_dependable_flow_and_rainfall,
+    infill_missing_rainfall
 )
 
 # Set page config
@@ -508,7 +510,8 @@ try:
     weibull_export = calculate_dependable_flow_and_rainfall(
         df=stn_filter_wb,
         station=None,
-        crop_type="Padi"
+        crop_type="Padi",
+        infill_method="auto"
     )
 except TypeError:
     try:
@@ -938,10 +941,10 @@ with tab_weibull:
             "khusus keandalan 80% (Q80) untuk perencanaan irigasi & pertanian sesuai Standar Perencanaan Irigasi KP-01 Ditjen Pengairan PUPR."
         )
 
-    # Box Pengaturan Parameter (Data Curah Hujan, Jenis Tanaman & Deret Data Historis)
+    # Box Pengaturan Parameter (Data Curah Hujan, Jenis Tanaman, Deret Data Historis & Infilling)
     with st.container(border=True):
-        st.markdown("##### 🌾 Parameter Irigasi & Pertanian")
-        col_w_stn, col_w_crop, col_w_src = st.columns([1.3, 1.5, 1.2])
+        st.markdown("##### 🌾 Parameter Irigasi, Pertanian & Penanganan Data Alat Rusak")
+        col_w_stn, col_w_crop, col_w_src, col_w_infill = st.columns([1.2, 1.3, 1.2, 1.3])
         with col_w_stn:
             stn_w_options = ["Semua Stasiun (Rata-rata Kawasan)"] + selected_stations
             selected_w_stn = st.selectbox("Pilih Stasiun Pengamatan:", stn_w_options, key="weibull_stn_choice")
@@ -966,6 +969,16 @@ with tab_weibull:
                 key="weibull_src_choice",
                 help="Sesuai SNI & Standar Perencanaan KP-01 Ditjen Pengairan PUPR, analisis andalan membutuhkan deret data multi-tahun (idealnya >= 10 tahun) untuk memperoleh probabilitas 80% yang valid."
             )
+        with col_w_infill:
+            weibull_infill_choice = st.radio(
+                "Penanganan Alat Rusak:",
+                [
+                    "Estimasi Otomatis (Infilling SNI/PUPR)",
+                    "Data Asli (Tanpa Estimasi)"
+                ],
+                key="weibull_infill_choice",
+                help="Standar SNI 19-6738-2002 & Standar KP-01: Mengestimasi nilai curah hujan hari saat alat rusak menggunakan korelasi stasiun aktif di sekitarnya agar total bulanan & debit andalan tidak terpotong semu."
+            )
 
     # Tentukan jenis tanaman
     if "Palawija" in crop_choice:
@@ -981,24 +994,19 @@ with tab_weibull:
     else:
         df_w_target = filtered_df
 
+    infill_method_wb = "auto" if "Estimasi Otomatis" in weibull_infill_choice else "none"
+
     # Eksekusi Analisis Weibull Q80
     stn_query = None if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)" else selected_w_stn
     try:
         weibull_results = calculate_dependable_flow_and_rainfall(
             df=df_w_target,
             station=stn_query,
-            crop_type=crop_key
+            crop_type=crop_key,
+            infill_method=infill_method_wb
         )
-    except TypeError:
-        try:
-            weibull_results = calculate_dependable_flow_and_rainfall(
-                df_w_target,
-                stn_query
-            )
-        except Exception:
-            weibull_results = {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_coef": 0.70}
-    except Exception:
-        weibull_results = {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_coef": 0.70}
+    except Exception as e:
+        weibull_results = {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_coef": 0.70, "error": str(e)}
 
     if not weibull_results["summary"].empty:
         w_sum = weibull_results["summary"]
@@ -1057,6 +1065,16 @@ with tab_weibull:
                 st.markdown(f"**📅 Deret Tahun Pengamatan:** **{yr_range_label}**")
                 st.caption(f"Tahun-tahun pengamatan yang digunakan dalam rumus ranking Weibull $P = [m / (N+1)] \\times 100\\%$:")
                 st.code(yr_str_list, language="text")
+
+        # Kotak Rekapitulasi Infilling Data Hilang jika ada
+        if weibull_results.get("infill_count", 0) > 0 and infill_method_wb != "none":
+            with st.expander(f"🛠️ Rekapitulasi Pengisian Data Hilang ({weibull_results['infill_count']} Hari Alat Rusak Diestimasi Otomatis)"):
+                st.info(
+                    "💡 **Metode Pengisian Data Hilang (Infilling):** Menggunakan rata-rata stasiun pemantau aktif di sekitarnya pada tanggal yang sama "
+                    "sesuai **SNI 19-6738-2002** & **Standar Perencanaan Irigasi KP-01 Ditjen SDA PUPR**. "
+                    "Dengan estimasi ini, total curah hujan bulanan dan debit andalan Q80 tetap akurat dan tidak terpotong akibat kerusakan alat."
+                )
+                st.dataframe(weibull_results["infill_log"], use_container_width=True, hide_index=True)
 
         # Tabel Utama
         with st.container(border=True):
@@ -1183,6 +1201,9 @@ with tab_weibull:
             wb_exp_dict["year_range_str"] = yr_range_label
             wb_exp_dict["n_stations"] = n_stn
             wb_exp_dict["n_years"] = n_yr
+            wb_exp_dict["infill_method"] = weibull_infill_choice
+            wb_exp_dict["infill_count"] = weibull_results.get("infill_count", 0)
+            wb_exp_dict["infill_log"] = weibull_results.get("infill_log", pd.DataFrame())
 
             col_w_dl1, col_w_dl2, col_w_dl_sp = st.columns([2, 2, 3])
 
@@ -1224,14 +1245,24 @@ with tab_hydro:
         st.subheader("🌊 Analisis Frekuensi Hidrologi & Curah Hujan Rancangan (Kala Ulang)")
         st.caption("Perhitungan curah hujan rancangan metode Gumbel dan Log Pearson Tipe III untuk kala ulang T = 2, 5, 10, 25, 50, dan 100 Tahun (Standar SNI & PU Perencanaan Bangunan Air/Drainase).")
 
-        col_h_stn, col_h_info = st.columns([2, 3])
+        col_h_stn, col_h_infill = st.columns([1.5, 2.5])
         with col_h_stn:
             h_stn = st.selectbox("Pilih Stasiun untuk Dianalisis:", selected_stations, key="hydro_stn_select")
+        with col_h_infill:
+            hydro_infill_choice = st.radio(
+                "Perlakuan Data Alat Rusak:",
+                [
+                    "Estimasi Otomatis (Infilling SNI/WMO)",
+                    "Data Asli (Tanpa Estimasi)"
+                ],
+                horizontal=True,
+                key="hydro_infill_choice",
+                help="Standar SNI 19-6738-2002: Jika alat rusak bertepatan dengan hujan lebat di kawasan, estimasi stasiun sekitar memastikan puncak Pmax tidak terlewatkan dan deret LP3 memiliki data valid."
+            )
 
     if h_stn:
-        sub_h = df_raw[(df_raw["Stasiun"] == h_stn) & (df_raw["Curah_Hujan"].notna())]
-        pmax_series = sub_h.groupby("Tahun")["Curah_Hujan"].max()
-        stats_p = calculate_statistical_parameters(pmax_series)
+        h_method = "auto" if "Estimasi Otomatis" in hydro_infill_choice else "none"
+        stats_p, stn_infill_log = get_station_frequency_stats(df_raw, h_stn, infill_method=h_method)
         
         if stats_p:
             # Metric cards
@@ -1250,7 +1281,7 @@ with tab_hydro:
             with col_r1:
                 with st.container(border=True):
                     st.markdown("##### 📋 Tabel Curah Hujan Rancangan (mm)")
-                    design_df = get_design_rainfall_summary(df_raw, h_stn)
+                    design_df = get_design_rainfall_summary(df_raw, h_stn, infill_method=h_method)
                     st.dataframe(design_df, use_container_width=True, hide_index=True)
 
             with col_r2:
@@ -1280,6 +1311,17 @@ with tab_hydro:
                             hovermode="x unified"
                         )
                         st.plotly_chart(fig_h, use_container_width=True)
+
+            # Expandable Rekapitulasi Data Rusak yang Diestimasi
+            if not stn_infill_log.empty and h_method != "none":
+                with st.expander(f"🛠️ Rekapitulasi Data Rusak yang Diestimasi pada Stasiun {h_stn} ({len(stn_infill_log)} Hari)"):
+                    st.info(
+                        f"💡 Nilai curah hujan harian Stasiun **{h_stn}** pada hari saat alat pengukur rusak diestimasi menggunakan rata-rata stasiun pemantau aktif di sekitarnya pada tanggal yang sama "
+                        "sesuai **SNI 19-6738-2002**. Hal ini melengkapi deret data tahunan $P_{max}$ sehingga parameter Gumbel dan Log Pearson III dapat dihitung secara optimal."
+                    )
+                    st.dataframe(stn_infill_log, use_container_width=True, hide_index=True)
+        else:
+            st.info(f"Data stasiun {h_stn} tidak mencukupi untuk melakukan analisis frekuensi (minimal 3 tahun data valid).")
 
 
 # ----------------- TAB: INPUT DATA MANUAL -----------------

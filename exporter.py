@@ -1182,8 +1182,10 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
 
     ws1["A7"] = "Waktu Pembuatan:"
     ws1["B7"] = datetime.datetime.now().strftime("%d %B %Y %H:%M WIB")
-    ws1["D7"] = "Standar Perencanaan:"
-    ws1["E7"] = "KP-01 Irigasi Ditjen SDA Kementerian PUPR"
+    infill_cnt = weibull_data.get("infill_count", 0)
+    infill_info_str = f"Estimasi Otomatis SNI/WMO ({infill_cnt} data diestimasi)" if infill_cnt > 0 else "Data Asli Tanpa Estimasi"
+    ws1["D7"] = "Perlakuan Alat Rusak:"
+    ws1["E7"] = infill_info_str
 
     for r_p in range(4, 8):
         ws1[f"A{r_p}"].font = font_bold
@@ -1398,6 +1400,39 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
             col_letter = get_column_letter(col[0].column)
             ws2.column_dimensions[col_letter].width = 13
 
+    # Sheet 3: Log Estimasi Data Rusak (Infilling) jika ada
+    infill_df = weibull_data.get("infill_log", pd.DataFrame())
+    if isinstance(infill_df, pd.DataFrame) and not infill_df.empty:
+        ws3 = wb.create_sheet(title="Log Estimasi Data Rusak")
+        ws3.views.sheetView[0].showGridLines = True
+        ws3["A1"] = "REKAPITULASI PENGISIAN DATA HILANG / ALAT RUSAK (INFILLING DATA)"
+        ws3["A1"].font = font_title
+        ws3["A2"] = "Pedoman Standar SNI 19-6738-2002 & Standar Perencanaan Irigasi KP-01 Ditjen SDA PUPR"
+        ws3["A2"].font = font_subtitle
+
+        infill_headers = list(infill_df.columns)
+        for c_idx, h in enumerate(infill_headers, 1):
+            cell = ws3.cell(row=4, column=c_idx, value=h)
+            cell.font = font_header
+            cell.fill = fill_header_teal
+            cell.alignment = align_center
+            cell.border = thin_border
+
+        for r_idx, r_data in enumerate(infill_df.itertuples(index=False), 5):
+            for c_idx, val in enumerate(r_data, 1):
+                cell = ws3.cell(row=r_idx, column=c_idx, value=val)
+                cell.font = font_regular
+                cell.border = thin_border
+                if isinstance(val, (int, float)):
+                    cell.alignment = align_right
+                    cell.number_format = "0.0" if isinstance(val, float) else "#,##0"
+                else:
+                    cell.alignment = align_center if c_idx in (1, 2) else align_left
+
+        for col in ws3.columns:
+            col_letter = get_column_letter(col[0].column)
+            ws3.column_dimensions[col_letter].width = 20
+
     wb.save(output)
     output.seek(0)
     return output
@@ -1508,6 +1543,9 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
     if yr_list_str:
         yr_desc += f"<br/><font size=7 color='#4B5563'><b>Tahun (N = {n_yr}):</b> {yr_list_str}</font>"
 
+    infill_cnt = weibull_data.get("infill_count", 0)
+    infill_text = f"Estimasi Otomatis SNI/WMO ({infill_cnt} hari diestimasi)" if infill_cnt > 0 else "Data Asli Tanpa Estimasi"
+
     meta_cells = [
         [
             Paragraph(stn_desc, meta_style),
@@ -1520,6 +1558,10 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
         [
             Paragraph(f"<b>Basis Data Waktu:</b> {basis_label}", meta_style),
             Paragraph(f"<b>Standar Perencanaan:</b> KP-01 Irigasi Ditjen SDA Kementerian PUPR", meta_style)
+        ],
+        [
+            Paragraph(f"<b>Perlakuan Alat Rusak:</b> {infill_text}", meta_style),
+            Paragraph(f"<b>Pedoman Infilling:</b> SNI 19-6738-2002 / WMO & Ditjen SDA PUPR", meta_style)
         ]
     ]
     meta_t = Table(meta_cells, colWidths=[380, 380])
