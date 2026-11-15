@@ -385,6 +385,9 @@ with st.sidebar:
             all_y_check = st.checkbox("Pilih Semua Tahun", value=False)
         default_y = all_years if all_y_check else [2020]
         selected_years = st.multiselect("Pilih Tahun:", all_years, default=default_y)
+        if not selected_years:
+            st.warning("Pilih minimal satu tahun!")
+            st.stop()
         
         # Pilihan Bulan
         month_options = list(MONTH_NAMES_ID.items()) # [(1, 'Januari'), ...]
@@ -396,10 +399,16 @@ with st.sidebar:
             format_func=lambda x: MONTH_NAMES_ID[x],
             default=default_m
         )
+        if not selected_months:
+            st.warning("Pilih minimal satu bulan!")
+            st.stop()
     else:
         # Musim
         start_date, end_date = None, None
         selected_years = st.multiselect("Pilih Tahun:", all_years, default=all_years[-5:])
+        if not selected_years:
+            st.warning("Pilih minimal satu tahun!")
+            st.stop()
         selected_season = st.selectbox(
             "Pilih Musim:",
             ["Musim Hujan (Oktober - April)", "Musim Kemarau (Mei - September)"]
@@ -947,6 +956,21 @@ with tab_matrix:
 with tab_charts:
     with st.container(border=True):
         st.subheader("📈 Analisis Grafik Interaktif")
+        st.caption("Visualisasi tren fluktuasi curah hujan harian, akumulasi bulanan, distribusi intensitas BMKG, dan peringkat stasiun sesuai kriteria sidebar.")
+        
+        # Info Box Sinkronisasi Filter Sidebar
+        st.markdown(
+            f"<div style='background-color: #F8FAFC; border-left: 4.5px solid #0284C7; border-radius: 8px; padding: 10px 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>"
+            f"<div style='font-weight: 700; color: #0F172A; font-size: 0.88rem; margin-bottom: 2px;'>📌 Parameter Filter Aktif (Tersinkronisasi dengan Sidebar):</div>"
+            f"<div style='font-size: 0.82rem; color: #334155;'>"
+            f"📍 <b>Stasiun Pengamatan ({len(selected_stations)} Stasiun):</b> <code>{', '.join(selected_stations[:10])}{'...' if len(selected_stations) > 10 else ''}</code> &nbsp;&bull;&nbsp; "
+            f"📅 <b>Periode Waktu:</b> <code>{filter_periode_str}</code> &nbsp;&bull;&nbsp; "
+            f"🌧️ <b>Kondisi:</b> <code>{'Hari Hujan > 0 mm' if only_rain_days else 'Semua Hari'}</code>"
+            f"</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
         chart_type = st.radio(
             "Pilih Jenis Grafik:",
             ["Tren Curah Hujan Harian (Line)", "Total Curah Hujan Bulanan (Bar)", "Distribusi Intensitas BMKG (Donut)", "Perbandingan Akumulasi Stasiun (Bar)"],
@@ -955,50 +979,120 @@ with tab_charts:
 
     if chart_type == "Tren Curah Hujan Harian (Line)":
         st.markdown("##### 🌊 Tren Curah Hujan Harian Per Stasiun")
-        # Batasi stasiun agar grafik tidak terlalu padat jika pilih banyak
-        stn_to_plot = selected_stations[:8]
-        if len(selected_stations) > 8:
-            st.info(f"💡 Menampilkan 8 stasiun pertama ({', '.join(stn_to_plot)}) agar grafik mudah dibaca.")
-
-        chart_df = filtered_df[filtered_df["Stasiun"].isin(stn_to_plot)].copy()
         
-        fig = px.line(
-            chart_df,
-            x="Tanggal",
-            y="Curah_Hujan",
-            color="Stasiun",
-            labels={"Curah_Hujan": "Curah Hujan (mm)", "Tanggal": "Tanggal Pengamatan"},
-            title="Tren Fluktuasi Curah Hujan Harian"
-        )
-        fig.update_layout(
-            hovermode="x unified",
-            xaxis=dict(rangeslider=dict(visible=True)),
-            height=480,
-            template="plotly_white"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        col_cg1, col_cg2 = st.columns([2.5, 1.5])
+        with col_cg1:
+            stn_chart_sel = st.multiselect(
+                "Pilih Stasiun untuk Ditampilkan pada Grafik:",
+                options=selected_stations,
+                default=selected_stations,
+                key="chart_line_stn_multiselect",
+                help="Menampilkan seluruh stasiun yang Anda pilih di filter sidebar secara default. Anda dapat memfilter stasiun tertentu jika ingin visualisasi lebih terfokus."
+            )
+            if not stn_chart_sel:
+                stn_chart_sel = selected_stations
+
+        with col_cg2:
+            opt_c_sidebar = f"Sesuai Filter Sidebar ({filter_periode_str})"
+            opt_c_all = "Seluruh Periode Historis (2015 - 2026)"
+            chart_time_src = st.radio(
+                "Cakupan Tanggal Grafik:",
+                [opt_c_sidebar, opt_c_all],
+                key="chart_line_time_src",
+                help="Default mengikuti rentang tanggal yang dipilih pada sidebar."
+            )
+
+        if "Sesuai Filter Sidebar" in chart_time_src:
+            chart_df = filtered_df[filtered_df["Stasiun"].isin(stn_chart_sel)].copy()
+            sub_title_txt = f"Periode Filter: {filter_periode_str}"
+        else:
+            chart_df = df_raw[df_raw["Stasiun"].isin(stn_chart_sel)].copy()
+            sub_title_txt = "Periode Historis Lengkap (2015 - 2026)"
+
+        if not chart_df.empty:
+            chart_df = chart_df.sort_values(by=["Stasiun", "Tanggal"]).reset_index(drop=True)
+            
+            fig = px.line(
+                chart_df,
+                x="Tanggal",
+                y="Curah_Hujan",
+                color="Stasiun",
+                labels={"Curah_Hujan": "Curah Hujan (mm)", "Tanggal": "Tanggal Pengamatan"},
+                title=f"Tren Fluktuasi Curah Hujan Harian — {sub_title_txt} ({len(stn_chart_sel)} Stasiun)"
+            )
+            
+            min_tgl = chart_df["Tanggal"].min()
+            max_tgl = chart_df["Tanggal"].max()
+            
+            fig.update_layout(
+                hovermode="x unified",
+                xaxis=dict(
+                    range=[min_tgl, max_tgl] if pd.notna(min_tgl) and pd.notna(max_tgl) else None,
+                    rangeslider=dict(visible=True)
+                ),
+                height=480,
+                template="plotly_white",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Tidak ada data curah hujan untuk kriteria tanggal dan stasiun yang dipilih.")
 
     elif chart_type == "Total Curah Hujan Bulanan (Bar)":
         st.markdown("##### 📊 Total Curah Hujan Per Bulan")
-        # Agregasi per Tahun dan Bulan
-        monthly_agg = filtered_df.groupby(["Tahun", "Bulan", "Nama_Bulan"])["Curah_Hujan"].sum().reset_index()
-        monthly_agg["Periode"] = monthly_agg["Nama_Bulan"].str[:3] + " " + monthly_agg["Tahun"].astype(str)
-        monthly_agg.sort_values(by=["Tahun", "Bulan"], inplace=True)
+        
+        col_b_stn, col_b_time = st.columns([2.5, 1.5])
+        with col_b_stn:
+            stn_bar_opts = ["Rata-rata Kawasan (Seluruh Stasiun Terpilih)", "Total Akumulasi Seluruh Stasiun Terpilih"] + selected_stations
+            bar_stn_choice = st.selectbox("Pilih Agregasi Stasiun:", stn_bar_opts, key="chart_bar_stn_choice")
+        with col_b_time:
+            opt_b_sidebar = f"Sesuai Filter Sidebar ({filter_periode_str})"
+            opt_b_all = "Seluruh Periode Historis (2015 - 2026)"
+            bar_time_choice = st.radio("Cakupan Waktu:", [opt_b_sidebar, opt_b_all], key="chart_bar_time_choice")
 
-        fig_bar = px.bar(
-            monthly_agg,
-            x="Periode",
-            y="Curah_Hujan",
-            color="Curah_Hujan",
-            color_continuous_scale="Blues",
-            labels={"Curah_Hujan": "Total Curah Hujan (mm)", "Periode": "Bulan & Tahun"},
-            title="Akumulasi Curah Hujan Per Periode Bulanan"
-        )
-        fig_bar.update_layout(height=480, template="plotly_white")
-        st.plotly_chart(fig_bar, use_container_width=True)
+        if "Sesuai Filter Sidebar" in bar_time_choice:
+            df_bar_base = filtered_df.copy()
+            time_lbl = filter_periode_str
+        else:
+            df_bar_base = df_raw[df_raw["Stasiun"].isin(selected_stations)].copy()
+            time_lbl = "2015 - 2026"
+
+        if bar_stn_choice == "Rata-rata Kawasan (Seluruh Stasiun Terpilih)":
+            stn_m = df_bar_base.groupby(["Stasiun", "Tahun", "Bulan", "Nama_Bulan"])["Curah_Hujan"].sum().reset_index()
+            monthly_agg = stn_m.groupby(["Tahun", "Bulan", "Nama_Bulan"])["Curah_Hujan"].mean().reset_index()
+            bar_title = f"Rata-rata Curah Hujan Bulanan Kawasan ({len(selected_stations)} Stasiun Terpilih) — {time_lbl}"
+            bar_y_label = "Rata-rata Curah Hujan (mm)"
+        elif bar_stn_choice == "Total Akumulasi Seluruh Stasiun Terpilih":
+            monthly_agg = df_bar_base.groupby(["Tahun", "Bulan", "Nama_Bulan"])["Curah_Hujan"].sum().reset_index()
+            bar_title = f"Total Akumulasi Curah Hujan Bulanan ({len(selected_stations)} Stasiun Terpilih) — {time_lbl}"
+            bar_y_label = "Total Curah Hujan (mm)"
+        else:
+            df_sub_stn = df_bar_base[df_bar_base["Stasiun"] == bar_stn_choice]
+            monthly_agg = df_sub_stn.groupby(["Tahun", "Bulan", "Nama_Bulan"])["Curah_Hujan"].sum().reset_index()
+            bar_title = f"Curah Hujan Bulanan Stasiun {bar_stn_choice} — {time_lbl}"
+            bar_y_label = "Curah Hujan (mm)"
+
+        if not monthly_agg.empty:
+            monthly_agg["Periode"] = monthly_agg["Nama_Bulan"].str[:3] + " " + monthly_agg["Tahun"].astype(str)
+            monthly_agg.sort_values(by=["Tahun", "Bulan"], inplace=True)
+
+            fig_bar = px.bar(
+                monthly_agg,
+                x="Periode",
+                y="Curah_Hujan",
+                color="Curah_Hujan",
+                color_continuous_scale="Blues",
+                labels={"Curah_Hujan": bar_y_label, "Periode": "Bulan & Tahun"},
+                title=bar_title
+            )
+            fig_bar.update_layout(height=480, template="plotly_white")
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.info("Tidak ada data bulanan untuk kriteria yang dipilih.")
 
     elif chart_type == "Distribusi Intensitas BMKG (Donut)":
         st.markdown("##### 🍩 Proporsi Klasifikasi Curah Hujan (BMKG)")
+        st.caption(f"Proporsi kejadian hujan untuk **{len(selected_stations)} stasiun terpilih** pada periode: **{filter_periode_str}**")
         bmkg_counts = filtered_df["Kategori_BMKG"].value_counts().reset_index()
         bmkg_counts.columns = ["Kategori", "Jumlah Hari"]
 
@@ -1020,13 +1114,14 @@ with tab_charts:
             hole=0.45,
             color="Kategori",
             color_discrete_map=color_map,
-            title="Distribusi Kejadian Hujan Berdasarkan Kategori BMKG"
+            title=f"Distribusi Kejadian Hujan BMKG ({len(selected_stations)} Stasiun — {filter_periode_str})"
         )
         fig_pie.update_layout(height=480, template="plotly_white")
         st.plotly_chart(fig_pie, use_container_width=True)
 
     elif chart_type == "Perbandingan Akumulasi Stasiun (Bar)":
         st.markdown("##### 🏆 Ranking Stasiun Berdasarkan Total Curah Hujan")
+        st.caption(f"Peringkat total curah hujan untuk **{len(selected_stations)} stasiun terpilih** pada periode: **{filter_periode_str}**")
         stn_sum = summary_table_df.sort_values(by="Total Curah Hujan (mm)", ascending=True)
 
         fig_stn = px.bar(
@@ -1036,17 +1131,17 @@ with tab_charts:
             orientation="h",
             color="Total Curah Hujan (mm)",
             color_continuous_scale="Tealgrn",
-            labels={"Total Curah Hujan (mm)": "Total Curah Hujan (mm)", "Stasiun": "Nomor Stasiun"},
-            title="Perbandingan Total Curah Hujan Antar Stasiun"
+            labels={"Total Curah Hujan (mm)": "Total Curah Hujan (mm)", "Stasiun": "Kode Stasiun"},
+            title=f"Perbandingan Total Curah Hujan Antar Stasiun ({filter_periode_str})"
         )
-        fig_stn.update_layout(height=max(450, len(stn_sum) * 20), template="plotly_white")
+        fig_stn.update_layout(height=max(450, len(stn_sum) * 24), template="plotly_white")
         st.plotly_chart(fig_stn, use_container_width=True)
 
 # ----------------- TAB: RINGKASAN STASIUN -----------------
 with tab_summary:
     with st.container(border=True):
         st.subheader("📊 Ringkasan Statistik Per Stasiun")
-        st.caption("Rangkuman statistik lengkap untuk setiap stasiun pengamatan berdasarkan periode waktu yang difilter.")
+        st.caption(f"Rangkuman statistik lengkap untuk **{len(selected_stations)} stasiun terpilih** berdasarkan periode filter: **{filter_periode_str}**.")
 
         st.dataframe(
             summary_table_df,
