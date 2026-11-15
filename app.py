@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import io
 import sys
 import importlib
+import re
 
 import data_processor
 import exporter
@@ -30,7 +31,12 @@ from data_processor import (
     persist_dataframe,
     MONTH_NAMES_ID
 )
-from exporter import export_to_excel, export_to_pdf
+from exporter import (
+    export_to_excel,
+    export_to_pdf,
+    export_weibull_to_excel,
+    export_weibull_to_pdf
+)
 from hydrology_analysis import (
     get_pmax_matrix,
     calculate_statistical_parameters,
@@ -524,8 +530,13 @@ with st.container(border=True):
         )
 
     with col_down2:
-        with st.spinner("Menyiapkan laporan PDF..."):
-            pdf_data = export_to_pdf(filtered_df, summary_table_df, filter_info_dict)
+        with st.spinner("Menyiapkan laporan PDF (termasuk analisis debit andalan & grafik)..."):
+            pdf_data = export_to_pdf(
+                df=filtered_df,
+                summary_df=summary_table_df,
+                filter_info=filter_info_dict,
+                weibull_data=weibull_export
+            )
         st.download_button(
             label="📄 Download Laporan (PDF .pdf)",
             data=pdf_data.getvalue(),
@@ -1101,6 +1112,48 @@ with tab_weibull:
                     st.caption(f"Data pengamatan pada periode {sel_m_inspect} tidak tersedia.")
             else:
                 st.caption("Data peringkat Weibull belum tersedia.")
+
+        # Ekspor Laporan Khusus Hasil Analisis Weibull (Excel & PDF)
+        with st.container(border=True):
+            st.markdown("##### 📥 Ekspor Laporan Analisis Weibull Lengkap (Excel & PDF)")
+            st.caption("Unduh seluruh hasil perhitungan Weibull (KPI, tabel bulanan, kurva durasi, grafik visual resolusi tinggi, dan rincian peringkat 12 bulan lengkap).")
+
+            wb_exp_dict = dict(weibull_results)
+            wb_exp_dict["station"] = selected_w_stn
+            wb_exp_dict["crop_type"] = crop_key
+            wb_exp_dict["data_source_mode"] = weibull_src_choice
+
+            col_w_dl1, col_w_dl2, col_w_dl_sp = st.columns([2, 2, 3])
+
+            clean_stn_slug = re.sub(r'[^\w\-_\. ]', '_', str(selected_w_stn)).strip().replace(" ", "_")
+
+            with col_w_dl1:
+                with st.spinner("Menyiapkan file Excel Weibull (lengkap dengan grafik visual & 2 sheet)..."):
+                    wb_excel_out = export_weibull_to_excel(
+                        weibull_data=wb_exp_dict,
+                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice}
+                    )
+                st.download_button(
+                    label="📥 Unduh Laporan Weibull (Excel .xlsx)",
+                    data=wb_excel_out.getvalue(),
+                    file_name=f"Laporan_Weibull_{clean_stn_slug}_{crop_key}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+            with col_w_dl2:
+                with st.spinner("Menyiapkan file PDF Weibull (lengkap dengan visual grafik & kurva durasi)..."):
+                    wb_pdf_out = export_weibull_to_pdf(
+                        weibull_data=wb_exp_dict,
+                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice}
+                    )
+                st.download_button(
+                    label="📄 Unduh Laporan Weibull (PDF .pdf)",
+                    data=wb_pdf_out.getvalue(),
+                    file_name=f"Laporan_Weibull_{clean_stn_slug}_{crop_key}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
     else:
         st.info("Data curah hujan tidak mencukupi untuk melakukan analisis Weibull.")
 
