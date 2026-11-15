@@ -172,6 +172,8 @@ def export_to_excel(
     fill_header_teal = PatternFill(start_color="0F766E", end_color="0F766E", fill_type="solid")
     fill_block_header = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
     fill_subtotal = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    fill_black = PatternFill(start_color="000000", end_color="000000", fill_type="solid")
+    font_note = Font(name="Calibri", size=9, italic=True, color="4B5563")
     
     thin_border = Border(
         left=Side(style="thin", color="CBD5E1"),
@@ -228,7 +230,8 @@ def export_to_excel(
         row_curr = start_row + 1
         for i, (_, r) in enumerate(df_yr.iterrows(), 1):
             tgl_str = pd.to_datetime(r["Tanggal"]).strftime("%Y-%m-%d") if pd.notna(r["Tanggal"]) else "-"
-            ch_val = r["Curah_Hujan"] if pd.notna(r["Curah_Hujan"]) else "-"
+            is_rusak = (str(r["Status"]) == "RUSAK")
+            ch_val = None if is_rusak else (r["Curah_Hujan"] if pd.notna(r["Curah_Hujan"]) else "-")
             
             row_vals = [
                 i,
@@ -246,7 +249,10 @@ def export_to_excel(
                 cell = ws_yr.cell(row=row_curr, column=c_idx, value=val)
                 cell.font = font_regular
                 cell.border = thin_border
-                if c_idx in (1, 2, 3, 5, 6, 8):
+                if c_idx == 7 and is_rusak:
+                    cell.value = None
+                    cell.fill = fill_black
+                elif c_idx in (1, 2, 3, 5, 6, 8):
                     cell.alignment = align_center
                 elif c_idx == 7 and isinstance(val, (int, float)):
                     cell.alignment = align_right
@@ -254,6 +260,10 @@ def export_to_excel(
                 else:
                     cell.alignment = align_left
             row_curr += 1
+
+        # Tambahkan catatan alat rusak di bagian bawah tabel data harian
+        ws_yr.cell(row=row_curr + 1, column=1, value="* Catatan: Sel Curah Hujan dengan arsir hitam (kosong tanpa angka) menandakan alat pengukur hujan (sensor) dalam kondisi RUSAK.")
+        ws_yr.cell(row=row_curr + 1, column=1).font = font_note
 
         # Auto-adjust column widths
         for col in ws_yr.columns:
@@ -359,6 +369,8 @@ def export_to_excel(
 
     # ==================== SHEET 3: MATRIKS HIDROLOGI LENGKAP ====================
     # Mendukung seluruh stasiun dan seluruh tahun yang dipilih
+    if all_matrices_dict is None and filter_info and "all_matrices" in filter_info:
+        all_matrices_dict = filter_info["all_matrices"]
     dict_to_export = all_matrices_dict if (all_matrices_dict and len(all_matrices_dict) > 0) else None
     if dict_to_export is None and (matrix_df is not None and not matrix_df.empty):
         stn_single = filter_info.get("stasiun_matriks", "Stasiun") if filter_info else "Stasiun"
@@ -422,7 +434,11 @@ def export_to_excel(
 
                 for c_idx, val in enumerate(row_vals, 2):
                     cell = ws_mat.cell(row=curr_r, column=c_idx)
-                    if pd.isna(val) or str(val).strip() in ("-", "RUSAK"):
+                    val_str = str(val).strip().upper() if pd.notna(val) else ""
+                    if val_str == "RUSAK":
+                        cell.value = None
+                        cell.fill = fill_black
+                    elif pd.isna(val) or val_str in ("-", ""):
                         cell.value = "-"
                         cell.alignment = align_center
                     else:
@@ -463,6 +479,9 @@ def export_to_excel(
                         cell.fill = fill_subtotal
                 curr_r += 1
 
+            # Tambahkan catatan di bawah tabel matriks
+            ws_mat.cell(row=curr_r, column=1, value="* Catatan: Sel dengan arsir hitam (kosong tanpa angka) menandakan alat pengukur hujan (sensor) dalam kondisi RUSAK.")
+            ws_mat.cell(row=curr_r, column=1).font = font_note
             curr_r += 2 # Spasi 2 baris kosong antar blok matriks
 
         for col in ws_mat.columns:
@@ -983,10 +1002,12 @@ def export_to_pdf(
 
         dt_cols = ["No", "Stasiun", "Tahun", "Bulan", "Hari", "Tanggal", "Curah Hujan (mm)", "Status", "Kategori BMKG"]
         dt_table_data = [[Paragraph(f"<b>{col}</b>", body_bold) for col in dt_cols]]
+        extra_pdf_styles = []
 
         for i, (_, r) in enumerate(display_df.iterrows(), 1):
             tgl_str = pd.to_datetime(r["Tanggal"]).strftime("%d-%m-%Y") if pd.notna(r["Tanggal"]) else "-"
-            ch_str = f"{r['Curah_Hujan']:.1f}" if pd.notna(r["Curah_Hujan"]) else "-"
+            is_rusak = (str(r["Status"]) == "RUSAK")
+            ch_str = "" if is_rusak else (f"{r['Curah_Hujan']:.1f}" if pd.notna(r["Curah_Hujan"]) else "-")
             row = [
                 Paragraph(str(i), body_style),
                 Paragraph(str(r["Stasiun"]), body_style),
@@ -999,9 +1020,11 @@ def export_to_pdf(
                 Paragraph(str(r["Kategori_BMKG"]), body_style),
             ]
             dt_table_data.append(row)
+            if is_rusak:
+                extra_pdf_styles.append(('BACKGROUND', (6, i), (6, i), colors.HexColor("#000000")))
 
         dt_table = Table(dt_table_data, colWidths=[35, 60, 48, 70, 40, 75, 95, 65, 260], repeatRows=1)
-        dt_table.setStyle(TableStyle([
+        base_styles = [
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
@@ -1009,8 +1032,11 @@ def export_to_pdf(
             ('TOPPADDING', (0, 0), (-1, -1), 2.5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ]))
+        ]
+        dt_table.setStyle(TableStyle(base_styles + extra_pdf_styles))
         story.append(dt_table)
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("<i>* Catatan: Sel Curah Hujan dengan arsir hitam (kosong tanpa angka) menandakan alat pengukur hujan (sensor) dalam kondisi RUSAK.</i>", subtitle_style))
 
     # ==================== ANALISIS DEBIT ANDALAN WEIBULL (JIKA ADA) ====================
     if weibull_data and not weibull_data.get("summary", pd.DataFrame()).empty:

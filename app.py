@@ -440,9 +440,11 @@ with st.container(border=True):
 # ==============================================================================
 summary_table_df = get_station_summary(filtered_df)
 
-# Helper fungsi format tampilan matriks hidrologi (0 tetap 0, sensor rusak strip -)
+# Helper fungsi format tampilan matriks hidrologi (0 tetap 0, sensor rusak kosong dan diarsir hitam)
 def format_matrix_cell(v):
-    if pd.isna(v) or str(v).strip() in ("-", "RUSAK"):
+    if str(v).strip().upper() == "RUSAK":
+        return ""
+    if pd.isna(v) or str(v).strip() == "-":
         return "-"
     try:
         val_f = float(v)
@@ -453,6 +455,11 @@ def format_matrix_cell(v):
         return f"{val_f:.1f}"
     except:
         return str(v)
+
+def style_matrix_cells(val):
+    if str(val).strip().upper() == "RUSAK":
+        return "background-color: #000000; color: #000000;"
+    return ""
 
 # Siapkan seluruh matriks bulanan untuk SEMUA stasiun terpilih dan SEMUA tahun yang difilter
 all_matrices_export = {}
@@ -717,12 +724,13 @@ with tab_matrix:
                         mat_df = get_monthly_matrix(df_for_matrices, stn_val, yr_item, months=months_in_filter)
                         if not mat_df.empty:
                             st.dataframe(
-                                mat_df.style.format(format_matrix_cell).background_gradient(
+                                mat_df.style.background_gradient(
                                     cmap="Blues", subset=mat_df.columns, vmin=0, vmax=100
-                                ),
+                                ).format(format_matrix_cell).map(style_matrix_cells),
                                 use_container_width=True,
                                 height=420
                             )
+                            st.caption("ℹ️ **Catatan:** Sel dengan arsir hitam (kosong tanpa angka) menandakan alat pengukur hujan (sensor) dalam kondisi **RUSAK**.")
                         else:
                             st.info(f"Tidak ada data untuk Stasiun {stn_val} tahun {yr_item}.")
 
@@ -776,12 +784,13 @@ with tab_matrix:
             mat_display = get_monthly_matrix(df_for_matrices, matrix_stn_select, matrix_yr_select, months=months_in_filter)
             if not mat_display.empty:
                 st.dataframe(
-                    mat_display.style.format(format_matrix_cell).background_gradient(
+                    mat_display.style.background_gradient(
                         cmap="Blues", subset=mat_display.columns, vmin=0, vmax=100
-                    ),
+                    ).format(format_matrix_cell).map(style_matrix_cells),
                     use_container_width=True,
                     height=520
                 )
+                st.caption("ℹ️ **Catatan:** Sel dengan arsir hitam (kosong tanpa angka) menandakan alat pengukur hujan (sensor) dalam kondisi **RUSAK**.")
             else:
                 st.info("Tidak ada data untuk kombinasi stasiun dan tahun tersebut.")
 
@@ -1236,49 +1245,58 @@ with tab_input:
     if input_mode == "Input Data Harian Tunggal (Single Entry)":
         with st.container(border=True):
             st.markdown("##### 📝 Formulir Input Data Harian Tunggal")
-            with st.form("form_single_entry"):
-                col_in1, col_in2 = st.columns(2)
+            col_in1, col_in2 = st.columns(2)
+            
+            with col_in1:
+                station_mode = st.radio("Pilihan Stasiun:", ["Pilih Stasiun Terdaftar", "Tambah Stasiun Baru"], horizontal=True)
+                if station_mode == "Pilih Stasiun Terdaftar":
+                    stn_input = st.selectbox("Nama / Kode Stasiun:", all_stations)
+                else:
+                    stn_input = st.text_input("Kode Stasiun Baru (misal: 69, 70a):").strip()
                 
-                with col_in1:
-                    station_mode = st.radio("Pilihan Stasiun:", ["Pilih Stasiun Terdaftar", "Tambah Stasiun Baru"], horizontal=True)
-                    if station_mode == "Pilih Stasiun Terdaftar":
-                        stn_input = st.selectbox("Nama / Kode Stasiun:", all_stations)
-                    else:
-                        stn_input = st.text_input("Kode Stasiun Baru (misal: 69, 70a):").strip()
-                    
-                    tgl_input = st.date_input("Tanggal Pengamatan:", value=datetime.date.today())
+                tgl_input = st.date_input("Tanggal Pengamatan:", value=datetime.date.today())
+            
+            with col_in2:
+                status_input = st.radio(
+                    "Status Alat Pengukur:", ["Normal", "RUSAK"], horizontal=True,
+                    help="Pilih RUSAK jika alat pengukur hujan tidak berfungsi pada tanggal ini."
+                )
                 
-                with col_in2:
-                    status_input = st.radio("Status Alat Pengukur:", ["Normal", "RUSAK"], horizontal=True,
-                                            help="Pilih RUSAK jika alat pengukur hujan tidak berfungsi pada tanggal ini.")
-                    
-                    if status_input == "Normal":
-                        ch_input = st.number_input("Curah Hujan (mm):", min_value=0.0, max_value=500.0, value=0.0, step=0.1, format="%.1f",
-                                                  help="Ketik 0 jika cuaca cerah/berawan dan tidak ada hujan sama sekali.")
-                    else:
-                        ch_input = None
-                        st.info("⚠️ Sensor berstatus RUSAK. Curah hujan akan otomatis ditandai strip (-) dalam matriks pengamatan.")
+                is_rusak = (status_input == "RUSAK")
+                ch_input = st.number_input(
+                    "Curah Hujan (mm):",
+                    min_value=0.0,
+                    max_value=500.0,
+                    value=0.0,
+                    step=0.1,
+                    format="%.1f",
+                    disabled=is_rusak,
+                    help="Isian otomatis dinonaktifkan jika status alat RUSAK." if is_rusak else "Ketik 0 jika cuaca cerah/berawan dan tidak ada hujan sama sekali."
+                )
+                if is_rusak:
+                    st.warning("⚠️ Alat pengukur berstatus **RUSAK**: Isian curah hujan dinonaktifkan otomatis. Pada tabel dan laporan, data akan dikosongkan dan diarsir hitam sesuai ketentuan.")
+                    ch_input = None
 
-                submit_single = st.form_submit_button("💾 Simpan Data Harian", use_container_width=True, type="primary")
+            submit_single = st.button("💾 Simpan Data Harian", use_container_width=True, type="primary")
 
-                if submit_single:
-                    if not stn_input:
-                        st.error("Silakan tentukan nama / kode stasiun!")
+            if submit_single:
+                if not stn_input:
+                    st.error("Silakan tentukan nama / kode stasiun!")
+                else:
+                    new_df = add_or_update_rainfall_record(
+                        df_main=df_raw,
+                        station=stn_input,
+                        date_val=tgl_input,
+                        rain_val=ch_input,
+                        status=status_input
+                    )
+                    saved = persist_dataframe(new_df)
+                    if saved:
+                        st.cache_data.clear()
+                        st.success(f"✅ Data Stasiun {stn_input} tanggal {tgl_input.strftime('%d-%m-%Y')} ({'RUSAK (Arsir Hitam)' if status_input == 'RUSAK' else f'{ch_input:.1f} mm'}) berhasil disimpan!")
+                        st.rerun()
                     else:
-                        new_df = add_or_update_rainfall_record(
-                            df_main=df_raw,
-                            station=stn_input,
-                            date_val=tgl_input,
-                            rain_val=ch_input,
-                            status=status_input
-                        )
-                        saved = persist_dataframe(new_df)
-                        if saved:
-                            st.cache_data.clear()
-                            st.success(f"✅ Data Stasiun {stn_input} tanggal {tgl_input.strftime('%d-%m-%Y')} ({'RUSAK (-)' if status_input == 'RUSAK' else f'{ch_input:.1f} mm'}) berhasil disimpan!")
-                            st.rerun()
-                        else:
-                            st.error("Gagal menyimpan data ke sistem penyimpanan.")
+                        st.error("Gagal menyimpan data ke sistem penyimpanan.")
 
     else:
         with st.container(border=True):

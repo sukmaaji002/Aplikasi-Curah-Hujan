@@ -19,6 +19,30 @@ MONTH_SHORT_TO_NUM = {
     "sep": 9, "oct": 10, "okt": 10, "nov": 11, "dec": 12, "des": 12
 }
 
+def is_cell_black_fill(cell) -> bool:
+    """Mendeteksi apakah sebuah sel di Excel memiliki arsir atau background hitam (menandakan alat rusak)."""
+    try:
+        fill = getattr(cell, 'fill', None)
+        if not fill or not getattr(fill, 'fill_type', None):
+            return False
+        ftype = str(fill.fill_type).lower()
+        if ftype not in ('solid', 'gray125', 'darkgray', 'darkgrid', 'lightdown', 'lightup'):
+            return False
+        fg = getattr(fill, 'fgColor', None)
+        if fg:
+            if getattr(fg, 'type', None) == 'theme':
+                if fg.theme in (0, 1) and getattr(fg, 'tint', 0.0) <= 0.0:
+                    return True
+            if getattr(fg, 'type', None) == 'rgb' and fg.rgb:
+                rgb_s = str(fg.rgb).upper()
+                if rgb_s in ('000000', 'FF000000', '00000000', '1E293B', '0F172A', '333333'):
+                    return True
+            if getattr(fg, 'type', None) == 'indexed' and fg.indexed in (0, 64):
+                return True
+    except Exception:
+        pass
+    return False
+
 def classify_bmkg(val: float, status: str) -> str:
     """Klasifikasi curah hujan harian menurut standar BMKG."""
     if status == "RUSAK":
@@ -237,11 +261,20 @@ def parse_rainfall_workbook(file_path_or_bytes) -> pd.DataFrame:
                             # Hari tidak ada di kalender (misal 30 Feb, 31 Apr)
                             continue
 
-                        cell_val = sheet.cell(curr_row, m + 1).value
+                        cell_obj = sheet.cell(curr_row, m + 1)
+                        cell_val = cell_obj.value
                         status = "Normal"
                         rain_val = None
 
-                        if cell_val is None:
+                        # Deteksi apakah alat rusak (dari arsir/background hitam atau teks 'RUSAK')
+                        is_rusak = is_cell_black_fill(cell_obj)
+                        if cell_val is not None and "RUSAK" in str(cell_val).upper():
+                            is_rusak = True
+
+                        if is_rusak:
+                            status = "RUSAK"
+                            rain_val = None
+                        elif cell_val is None:
                             rain_val = 0.0
                         elif isinstance(cell_val, (int, float)):
                             rain_val = float(cell_val)
@@ -249,9 +282,6 @@ def parse_rainfall_workbook(file_path_or_bytes) -> pd.DataFrame:
                             s = str(cell_val).strip().upper()
                             if s == "" or s == "-":
                                 rain_val = 0.0
-                            elif "RUSAK" in s:
-                                status = "RUSAK"
-                                rain_val = None
                             else:
                                 # Parsing angka desimal dengan koma (format Indonesia: 3,5 -> 3.5)
                                 try:
@@ -356,15 +386,31 @@ def get_monthly_matrix(df: pd.DataFrame, station: str, year: int, months: list =
     piv.columns = [MONTH_NAMES_ID[m][:3] for m in target_months]
     piv.index.name = "Tgl"
 
-    # Tambahkan baris statistik hidrologi di bawah
-    total_row = piv.sum(skipna=True)
-    mean_row = piv.mean(skipna=True).round(1)
-    max_row = piv.max(skipna=True)
-    rain_days = (piv > 0).sum(skipna=True)
+    # Tambahkan baris statistik hidrologi di bawah (sebelum menandai sel rusak)
+    numeric_piv = piv.apply(pd.to_numeric, errors='coerce')
+    total_row = numeric_piv.sum(skipna=True)
+    mean_row = numeric_piv.mean(skipna=True).round(1)
+    max_row = numeric_piv.max(skipna=True)
+    rain_days = (numeric_piv > 0).sum(skipna=True)
 
     summary_rows = pd.DataFrame([total_row, mean_row, max_row, rain_days],
                                 index=["JUMLAH", "RATA-RATA", "MAKSIMUM", "HARI HUJAN"])
-    
+
+    # Ubah piv ke dtype object agar dapat menampung string penanda "RUSAK"
+    piv = piv.astype(object)
+
+    # Tandai tanggal di mana alat pengukur rusak dengan nilai "RUSAK"
+    rusak_subset = subset[subset["Status"] == "RUSAK"]
+    for _, r_rk in rusak_subset.iterrows():
+        try:
+            d_val = int(r_rk["Hari"])
+            m_val = int(r_rk["Bulan"])
+            if m_val in target_months and d_val in piv.index:
+                m_col = MONTH_NAMES_ID[m_val][:3]
+                piv.loc[d_val, m_col] = "RUSAK"
+        except Exception:
+            pass
+
     full_table = pd.concat([piv, summary_rows])
     return full_table
 
