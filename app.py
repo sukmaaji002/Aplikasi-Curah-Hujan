@@ -5,6 +5,17 @@ import os
 import plotly.express as px
 import plotly.graph_objects as go
 import io
+import sys
+import importlib
+
+import data_processor
+import exporter
+import hydrology_analysis
+
+# Reload modul internal untuk mencegah cache versi usang pada Streamlit Cloud
+importlib.reload(data_processor)
+importlib.reload(exporter)
+importlib.reload(hydrology_analysis)
 
 from data_processor import (
     parse_rainfall_workbook,
@@ -461,11 +472,19 @@ pmax_export = get_pmax_cross_matrix(df_for_matrices)
 
 # Hitung data Debit Andalan (Metode Weibull Q80) untuk diekspor ke Excel
 stn_filter_wb = df_raw[df_raw["Stasiun"].isin(selected_stations)] if selected_stations else df_raw
-weibull_export = calculate_dependable_flow_and_rainfall(
-    df=stn_filter_wb,
-    station=None,
-    crop_type="Padi"
-)
+try:
+    weibull_export = calculate_dependable_flow_and_rainfall(
+        df=stn_filter_wb,
+        station=None,
+        crop_type="Padi"
+    )
+except TypeError:
+    try:
+        weibull_export = calculate_dependable_flow_and_rainfall(stn_filter_wb, None)
+    except Exception:
+        weibull_export = {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame()}
+except Exception:
+    weibull_export = {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame()}
 
 mat_stn = selected_stations[0] if selected_stations else "21b"
 mat_year = years_in_filter[0] if years_in_filter else 2020
@@ -929,11 +948,22 @@ with tab_weibull:
 
     # Eksekusi Analisis Weibull Q80
     stn_query = None if selected_w_stn == "Semua Stasiun (Rata-rata Kawasan)" else selected_w_stn
-    weibull_results = calculate_dependable_flow_and_rainfall(
-        df=df_w_target,
-        station=stn_query,
-        crop_type=crop_key
-    )
+    try:
+        weibull_results = calculate_dependable_flow_and_rainfall(
+            df=df_w_target,
+            station=stn_query,
+            crop_type=crop_key
+        )
+    except TypeError:
+        try:
+            weibull_results = calculate_dependable_flow_and_rainfall(
+                df_w_target,
+                stn_query
+            )
+        except Exception:
+            weibull_results = {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_coef": 0.70}
+    except Exception:
+        weibull_results = {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_coef": 0.70}
 
     if not weibull_results["summary"].empty:
         w_sum = weibull_results["summary"]

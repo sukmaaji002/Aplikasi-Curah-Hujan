@@ -211,7 +211,7 @@ def calculate_weibull_ranking(series: pd.Series) -> pd.DataFrame:
     }).sort_values(by="Nilai", ascending=False).reset_index(drop=True)
 
     n = len(sorted_df)
-    sorted_df["Peringkat (m)"] = range(1, n + 1)
+    sorted_df["Peringkat (m)"] = list(range(1, n + 1))
     sorted_df["Probabilitas P (%)"] = ((sorted_df["Peringkat (m)"] / (n + 1)) * 100.0).round(2)
     return sorted_df
 
@@ -249,6 +249,7 @@ def interpolate_weibull_value(ranking_df: pd.DataFrame, target_p: float = 80.0) 
 def calculate_dependable_flow_and_rainfall(
     df: pd.DataFrame,
     station: str = None,
+    *args,
     crop_type: str = "Padi",
     crop_c: float = None,
     **kwargs
@@ -268,83 +269,100 @@ def calculate_dependable_flow_and_rainfall(
     - Q80 (mm/hari): Rata-rata harian = Q80_bulan / Hari
     - Q80 (L/detik/ha): Ketersediaan debit irigasi per hektar = Q80_hari * 0.11574
     """
-    sub = df[df["Curah_Hujan"].notna()].copy()
-    if sub.empty:
-        return {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_info": {}}
+    try:
+        if args:
+            for arg in args:
+                if isinstance(arg, str) and arg in CROP_IRRIGATION_CONFIG:
+                    crop_type = arg
+                elif isinstance(arg, (int, float)) and 0.0 < arg <= 1.0:
+                    crop_c = float(arg)
 
-    c_val = crop_c if crop_c is not None else CROP_IRRIGATION_CONFIG.get(crop_type, {}).get("coef", 0.70)
-
-    # Pisahkan perhitungan jika 1 stasiun spesifik vs semua stasiun (rata-rata kawasan)
-    if station is not None and str(station).strip() not in ("Semua Stasiun", "Semua Stasiun (Rata-rata Kawasan)"):
-        sub = sub[sub["Stasiun"].astype(str) == str(station).strip()]
+        sub = df[df["Curah_Hujan"].notna()].copy()
         if sub.empty:
             return {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_info": {}}
-        monthly_matrix = sub.groupby(["Tahun", "Bulan"])["Curah_Hujan"].sum().unstack(level="Bulan")
-        annual_series = sub.groupby("Tahun")["Curah_Hujan"].sum()
-    else:
-        # RATA-RATA KAWASAN (Rata-rata curah hujan antar stasiun, BUKAN dijumlahkan!)
-        stn_m = sub.groupby(["Stasiun", "Tahun", "Bulan"])["Curah_Hujan"].sum().reset_index()
-        monthly_matrix = stn_m.groupby(["Tahun", "Bulan"])["Curah_Hujan"].mean().unstack(level="Bulan")
-        stn_y = sub.groupby(["Stasiun", "Tahun"])["Curah_Hujan"].sum().reset_index()
-        annual_series = stn_y.groupby("Tahun")["Curah_Hujan"].mean()
 
-    summary_rows = []
-    rankings_dict = {}
+        c_val = crop_c if crop_c is not None else CROP_IRRIGATION_CONFIG.get(crop_type, {}).get("coef", 0.70)
 
-    for m in range(1, 13):
-        m_name = MONTH_NAMES_INDONESIA[m]
-        days = DAYS_PER_MONTH[m]
-
-        if m in monthly_matrix.columns:
-            series_m = monthly_matrix[m].dropna()
+        # Pisahkan perhitungan jika 1 stasiun spesifik vs semua stasiun (rata-rata kawasan)
+        if station is not None and str(station).strip() not in ("Semua Stasiun", "Semua Stasiun (Rata-rata Kawasan)"):
+            sub = sub[sub["Stasiun"].astype(str) == str(station).strip()]
+            if sub.empty:
+                return {"summary": pd.DataFrame(), "rankings": {}, "annual_ranking": pd.DataFrame(), "crop_info": {}}
+            monthly_matrix = sub.groupby(["Tahun", "Bulan"])["Curah_Hujan"].sum().unstack(level="Bulan")
+            annual_series = sub.groupby("Tahun")["Curah_Hujan"].sum()
         else:
-            series_m = pd.Series(dtype=float)
+            # RATA-RATA KAWASAN (Rata-rata curah hujan antar stasiun, BUKAN dijumlahkan!)
+            stn_m = sub.groupby(["Stasiun", "Tahun", "Bulan"])["Curah_Hujan"].sum().reset_index()
+            monthly_matrix = stn_m.groupby(["Tahun", "Bulan"])["Curah_Hujan"].mean().unstack(level="Bulan")
+            stn_y = sub.groupby(["Stasiun", "Tahun"])["Curah_Hujan"].sum().reset_index()
+            annual_series = stn_y.groupby("Tahun")["Curah_Hujan"].mean()
 
-        rank_df = calculate_weibull_ranking(series_m)
-        rankings_dict[m_name] = rank_df
+        summary_rows = []
+        rankings_dict = {}
 
-        r80_val = interpolate_weibull_value(rank_df, 80.0)
-        q80_bln = round(c_val * r80_val, 1)
-        q80_hari = round(q80_bln / days, 2) if days > 0 else 0.0
-        q80_lps_ha = round(q80_hari * 0.11574, 3)
+        for m in range(1, 13):
+            m_name = MONTH_NAMES_INDONESIA[m]
+            days = DAYS_PER_MONTH[m]
+
+            if m in monthly_matrix.columns:
+                series_m = monthly_matrix[m].dropna()
+            else:
+                series_m = pd.Series(dtype=float)
+
+            rank_df = calculate_weibull_ranking(series_m)
+            rankings_dict[m_name] = rank_df
+
+            r80_val = interpolate_weibull_value(rank_df, 80.0)
+            q80_bln = round(c_val * r80_val, 1)
+            q80_hari = round(q80_bln / days, 2) if days > 0 else 0.0
+            q80_lps_ha = round(q80_hari * 0.11574, 3)
+
+            summary_rows.append({
+                "No": m,
+                "Bulan / Periode": m_name,
+                "Hari": int(days),
+                "R80 Curah Hujan (mm)": round(r80_val, 1),
+                "Koefisien (C)": round(c_val, 2),
+                "Q80 Andalan Irigasi (mm)": q80_bln,
+                "Q80 Rata-rata (mm/hari)": q80_hari,
+                "Q80 Debit Irigasi (L/detik/ha)": q80_lps_ha
+            })
+
+        # Analisis Total Tahunan
+        annual_rank = calculate_weibull_ranking(annual_series)
+        rankings_dict["Tahunan"] = annual_rank
+
+        r80_ann = interpolate_weibull_value(annual_rank, 80.0)
+        q80_ann_bln = round(c_val * r80_ann, 1)
+        q80_ann_hari = round(q80_ann_bln / 365.25, 2)
+        q80_ann_lps = round(q80_ann_hari * 0.11574, 3)
 
         summary_rows.append({
-            "No": m,
-            "Bulan / Periode": m_name,
-            "Hari": int(days),
-            "R80 Curah Hujan (mm)": round(r80_val, 1),
+            "No": 13,
+            "Bulan / Periode": "TOTAL TAHUNAN",
+            "Hari": 365,
+            "R80 Curah Hujan (mm)": round(r80_ann, 1),
             "Koefisien (C)": round(c_val, 2),
-            "Q80 Andalan Irigasi (mm)": q80_bln,
-            "Q80 Rata-rata (mm/hari)": q80_hari,
-            "Q80 Debit Irigasi (L/detik/ha)": q80_lps_ha
+            "Q80 Andalan Irigasi (mm)": q80_ann_bln,
+            "Q80 Rata-rata (mm/hari)": q80_ann_hari,
+            "Q80 Debit Irigasi (L/detik/ha)": q80_ann_lps
         })
 
-    # Analisis Total Tahunan
-    annual_rank = calculate_weibull_ranking(annual_series)
-    rankings_dict["Tahunan"] = annual_rank
-
-    r80_ann = interpolate_weibull_value(annual_rank, 80.0)
-    q80_ann_bln = round(c_val * r80_ann, 1)
-    q80_ann_hari = round(q80_ann_bln / 365.25, 2)
-    q80_ann_lps = round(q80_ann_hari * 0.11574, 3)
-
-    summary_rows.append({
-        "No": 13,
-        "Bulan / Periode": "TOTAL TAHUNAN",
-        "Hari": 365,
-        "R80 Curah Hujan (mm)": round(r80_ann, 1),
-        "Koefisien (C)": round(c_val, 2),
-        "Q80 Andalan Irigasi (mm)": q80_ann_bln,
-        "Q80 Rata-rata (mm/hari)": q80_ann_hari,
-        "Q80 Debit Irigasi (L/detik/ha)": q80_ann_lps
-    })
-
-    return {
-        "summary": pd.DataFrame(summary_rows),
-        "rankings": rankings_dict,
-        "annual_ranking": annual_rank,
-        "crop_type": crop_type,
-        "crop_coef": c_val
-    }
+        return {
+            "summary": pd.DataFrame(summary_rows),
+            "rankings": rankings_dict,
+            "annual_ranking": annual_rank,
+            "crop_type": crop_type,
+            "crop_coef": c_val
+        }
+    except Exception as e:
+        return {
+            "summary": pd.DataFrame(),
+            "rankings": {},
+            "annual_ranking": pd.DataFrame(),
+            "crop_type": crop_type,
+            "crop_coef": 0.70,
+            "error": str(e)
+        }
 
 
