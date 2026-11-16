@@ -250,8 +250,14 @@ st.markdown("""
 DEFAULT_PARQUET = "data_curah_hujan.parquet"
 DEFAULT_EXCEL = "data_curah_hujan_default.xlsx"
 
+def get_file_mtime(filepath):
+    try:
+        return os.path.getmtime(filepath) if os.path.exists(filepath) else 0
+    except Exception:
+        return 0
+
 @st.cache_data(show_spinner=False)
-def load_data(source_type="default", uploaded_file=None, raw_text=""):
+def load_data(source_type="default", uploaded_file=None, raw_text="", _mtime=0):
     """Memuat data curah hujan dari berbagai sumber (parquet, Excel, CSV, teks)."""
     if source_type == "excel" and uploaded_file is not None:
         df = parse_rainfall_workbook(uploaded_file)
@@ -339,14 +345,26 @@ with st.sidebar:
         if not raw_pasted_text.strip():
             st.info("Silakan tempel teks format data curah hujan.")
 
+    current_mtime = max(
+        get_file_mtime(DEFAULT_PARQUET),
+        get_file_mtime(DEFAULT_EXCEL)
+    )
+
     with st.spinner("Memuat dan mengkategorisasikan data curah hujan..."):
-        df_raw, source_name = load_data(source_key, uploaded_file, raw_pasted_text)
+        df_raw, source_name = load_data(source_key, uploaded_file, raw_pasted_text, _mtime=current_mtime)
 
     if df_raw.empty:
         st.error("Data curah hujan belum tersedia atau format tidak sesuai.")
         st.stop()
 
-    st.success(f"✅ {len(df_raw):,} data ({len(df_raw['Stasiun'].unique())} stasiun)")
+    col_sb_st1, col_sb_st2 = st.columns([1.8, 1.2])
+    with col_sb_st1:
+        st.success(f"✅ {len(df_raw):,} data ({len(df_raw['Stasiun'].unique())} stasiun)")
+    with col_sb_st2:
+        if st.button("🔄 Segarkan", use_container_width=True, help="Bersihkan cache memori dan baca ulang data terbaru dari file"):
+            st.cache_data.clear()
+            st.rerun()
+
     st.markdown("---")
 
     # Ambil range data
