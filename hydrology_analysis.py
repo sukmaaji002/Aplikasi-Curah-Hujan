@@ -383,6 +383,8 @@ def calculate_dependable_flow_and_rainfall(
     *args,
     crop_type: str = "Padi",
     crop_c: float = None,
+    monthly_c: dict = None,
+    monthly_crops: dict = None,
     infill_method: str = "none",
     **kwargs
 ) -> dict:
@@ -395,6 +397,8 @@ def calculate_dependable_flow_and_rainfall(
     - Palawija: C = 0.50
     - Hortikultura: C = 0.60
     
+    Mendukung pengaturan pola tanam dinamis per bulan (monthly_c & monthly_crops).
+    
     Output Debit Irigasi:
     - R80 (mm/bulan): Curah Hujan Andalan Keandalan 80%
     - Q80 (mm/bulan): Curah Hujan Efektif / Debit Andalan Irigasi = C * R80
@@ -402,12 +406,23 @@ def calculate_dependable_flow_and_rainfall(
     - Q80 (L/detik): Ketersediaan debit andalan irigasi = Q80_hari * 0.11574
     """
     try:
+        crop_type = kwargs.get("crop_type", crop_type)
+        crop_c = kwargs.get("crop_c", crop_c)
+        monthly_c = kwargs.get("monthly_c", monthly_c)
+        monthly_crops = kwargs.get("monthly_crops", monthly_crops)
+
         if args:
             for arg in args:
                 if isinstance(arg, str) and arg in CROP_IRRIGATION_CONFIG:
                     crop_type = arg
                 elif isinstance(arg, (int, float)) and 0.0 < arg <= 1.0:
                     crop_c = float(arg)
+                elif isinstance(arg, dict):
+                    sample_val = next(iter(arg.values())) if arg else None
+                    if isinstance(sample_val, (int, float)):
+                        monthly_c = arg
+                    elif isinstance(sample_val, str):
+                        monthly_crops = arg
 
         infill_method = kwargs.get("infill_method", infill_method)
         infill_log_df = pd.DataFrame()
@@ -471,16 +486,22 @@ def calculate_dependable_flow_and_rainfall(
             rankings_dict[m_name] = rank_df
 
             r80_val = interpolate_weibull_value(rank_df, 80.0)
-            q80_bln = round(c_val * r80_val, 1)
+
+            # Koefisien C bulanan & Jenis tanaman bulanan (mendukung pola tanam per bulan)
+            c_m = monthly_c.get(m, c_val) if (monthly_c and m in monthly_c) else c_val
+            crop_name_m = monthly_crops.get(m, CROP_IRRIGATION_CONFIG.get(crop_type, {}).get("name", crop_type)) if (monthly_crops and m in monthly_crops) else CROP_IRRIGATION_CONFIG.get(crop_type, {}).get("name", crop_type)
+
+            q80_bln = round(c_m * r80_val, 1)
             q80_hari = round(q80_bln / days, 2) if days > 0 else 0.0
             q80_lps_ha = round(q80_hari * 0.11574, 3)
 
             summary_rows.append({
                 "No": m,
                 "Bulan / Periode": m_name,
+                "Jenis Tanaman": crop_name_m,
                 "Hari": int(days),
                 "R80 Curah Hujan (mm)": round(r80_val, 1),
-                "Koefisien (C)": round(c_val, 2),
+                "Koefisien (C)": round(c_m, 2),
                 "Q80 Andalan Irigasi (mm)": q80_bln,
                 "Q80 Rata-rata (mm/hari)": q80_hari,
                 "Q80 Debit Irigasi (L/detik)": q80_lps_ha
@@ -491,17 +512,28 @@ def calculate_dependable_flow_and_rainfall(
         rankings_dict["Tahunan"] = annual_rank
 
         r80_ann = interpolate_weibull_value(annual_rank, 80.0)
-        q80_ann_bln = round(c_val * r80_ann, 1)
-        q80_ann_hari = round(q80_ann_bln / 365.25, 2)
+
+        # Total Q80 tahunan adalah akumulasi Q80 dari seluruh bulan pengamatan (pola tanam bergantian)
+        total_q80_bln = round(sum(r["Q80 Andalan Irigasi (mm)"] for r in summary_rows if r["No"] <= 12), 1)
+        if r80_ann > 0:
+            c_annual = round(total_q80_bln / r80_ann, 2)
+        else:
+            c_annual = round(float(np.mean([monthly_c.get(m, c_val) for m in range(1, 13)])) if monthly_c else c_val, 2)
+
+        q80_ann_hari = round(total_q80_bln / 365.25, 2)
         q80_ann_lps = round(q80_ann_hari * 0.11574, 3)
+
+        is_multi_crop = bool(monthly_c and len(set(monthly_c.values())) > 1)
+        annual_crop_label = "Pola Tanam Bergantian" if is_multi_crop else (monthly_crops.get(1, crop_type) if monthly_crops else crop_type)
 
         summary_rows.append({
             "No": 13,
             "Bulan / Periode": "TOTAL TAHUNAN",
+            "Jenis Tanaman": annual_crop_label,
             "Hari": 365,
             "R80 Curah Hujan (mm)": round(r80_ann, 1),
-            "Koefisien (C)": round(c_val, 2),
-            "Q80 Andalan Irigasi (mm)": q80_ann_bln,
+            "Koefisien (C)": c_annual,
+            "Q80 Andalan Irigasi (mm)": total_q80_bln,
             "Q80 Rata-rata (mm/hari)": q80_ann_hari,
             "Q80 Debit Irigasi (L/detik)": q80_ann_lps
         })
@@ -512,6 +544,9 @@ def calculate_dependable_flow_and_rainfall(
             "annual_ranking": annual_rank,
             "crop_type": crop_type,
             "crop_coef": c_val,
+            "monthly_c": monthly_c,
+            "monthly_crops": monthly_crops,
+            "is_multi_crop": is_multi_crop,
             "stations_used": stations_used,
             "years_used": years_used,
             "n_years": len(years_used),

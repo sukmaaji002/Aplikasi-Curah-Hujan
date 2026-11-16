@@ -1170,22 +1170,31 @@ with tab_weibull:
     # Box Pengaturan Parameter (Data Curah Hujan, Jenis Tanaman, Deret Data Historis & Infilling)
     with st.container(border=True):
         st.markdown("##### 🌾 Parameter Irigasi, Pertanian & Penanganan Data Alat Rusak")
-        col_w_stn, col_w_crop, col_w_src, col_w_infill = st.columns([1.3, 1.3, 1.2, 1.2])
+        col_w_stn, col_w_crop, col_w_src, col_w_infill = st.columns([1.3, 1.4, 1.2, 1.2])
         with col_w_stn:
             stn_w_label_kawasan = f"Rata-rata Kawasan ({len(selected_stations)} Stasiun Terpilih di Sidebar)"
             stn_w_options = [stn_w_label_kawasan] + selected_stations
             selected_w_stn = st.selectbox("Pilih Stasiun Pengamatan:", stn_w_options, key="weibull_stn_choice")
         with col_w_crop:
-            crop_choice = st.radio(
-                "Pilih Jenis Tanaman Irigasi:",
+            crop_mode = st.radio(
+                "Pola Jenis Tanaman Irigasi:",
                 [
-                    "Padi Sawah (Koefisien C = 0.70)",
-                    "Palawija / Jagung / Kedelai (Koefisien C = 0.50)",
-                    "Hortikultura / Buah & Sayur (Koefisien C = 0.60)"
+                    "🌾 Bergantian per Bulan (Custom Musim)",
+                    "🌱 1 Tanaman Seragam (12 Bulan)"
                 ],
-                horizontal=False,
-                key="crop_type_radio"
+                key="crop_pattern_mode",
+                help="Pilih apakah pola tanam bergantian per musim/bulan (misal Jan-Mar Padi, Apr-Agu Palawija) atau 1 jenis tanaman seragam sepanjang tahun."
             )
+            if crop_mode == "🌱 1 Tanaman Seragam (12 Bulan)":
+                uniform_crop_choice = st.selectbox(
+                    "Pilih Jenis Tanaman Seragam:",
+                    [
+                        "🌾 Padi Sawah (Koefisien C = 0.70)",
+                        "🌽 Palawija / Jagung / Kedelai (Koefisien C = 0.50)",
+                        "🥬 Hortikultura / Buah & Sayur (Koefisien C = 0.60)"
+                    ],
+                    key="weibull_uniform_crop"
+                )
         with col_w_src:
             min_filter_yr = min(years_in_filter) if years_in_filter else 2015
             max_filter_yr = max(years_in_filter) if years_in_filter else 2026
@@ -1208,13 +1217,145 @@ with tab_weibull:
                 help="Standar SNI 19-6738-2002 & Standar KP-01: Mengestimasi nilai curah hujan hari saat alat rusak menggunakan korelasi stasiun aktif di sekitarnya agar total bulanan & debit andalan tidak terpotong semu."
             )
 
-    # Tentukan jenis tanaman
-    if "Palawija" in crop_choice:
-        crop_key = "Palawija"
-    elif "Hortikultura" in crop_choice:
-        crop_key = "Hortikultura"
+    # Inisialisasi Opsi Tanaman & Session State Dinamis Bulanan
+    CROP_OPTION_MAP = {
+        "🌾 Padi Sawah (C = 0.70)": ("Padi", 0.70),
+        "🌽 Palawija / Jagung (C = 0.50)": ("Palawija", 0.50),
+        "🥬 Hortikultura / Sayur (C = 0.60)": ("Hortikultura", 0.60)
+    }
+    CROP_OPTION_LIST = list(CROP_OPTION_MAP.keys())
+    MONTH_NAMES_LIST = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+
+    for m in range(1, 13):
+        if f"sel_crop_m_{m}" not in st.session_state:
+            if m in [1, 2, 3]:
+                st.session_state[f"sel_crop_m_{m}"] = "🌾 Padi Sawah (C = 0.70)"
+            elif m in [4, 5, 6, 7, 8]:
+                st.session_state[f"sel_crop_m_{m}"] = "🌽 Palawija / Jagung (C = 0.50)"
+            elif m in [9, 10]:
+                st.session_state[f"sel_crop_m_{m}"] = "🌽 Palawija / Jagung (C = 0.50)"
+            else:
+                st.session_state[f"sel_crop_m_{m}"] = "🌾 Padi Sawah (C = 0.70)"
+
+    # Panel Pola Tata Tanam Bulanan Interaktif jika Mode Bergantian dipilih
+    if crop_mode == "🌾 Bergantian per Bulan (Custom Musim)":
+        with st.container(border=True):
+            st.markdown("##### 🗓️ Pengaturan Pola Tata Tanam & Koefisien (C) per Bulan")
+            st.caption(
+                "Sesuai kebutuhan lapangan dan standar Ditjen Pengairan PUPR, koefisien tanaman (C) dapat disesuaikan per bulan/musim. "
+                "Gunakan **Preset Cepat**, fitur **Terapkan ke Rentang Bulan**, atau pilih langsung pada dropdown masing-masing bulan."
+            )
+
+            # Baris 1: Preset Pilihan Cepat (1-Click)
+            st.markdown("**⚡ Pilihan Cepat / Preset Pola Tanam Standar:**")
+            col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+            with col_p1:
+                if st.button("🌾 Padi (Jan-Mar) ➔ 🌽 Palawija (Apr-Agu)", use_container_width=True, help="Jan-Mar: Padi (C=0.70), Apr-Agu: Palawija (C=0.50), Sep-Des: Horti (C=0.60)"):
+                    for m in range(1, 4):
+                        st.session_state[f"sel_crop_m_{m}"] = "🌾 Padi Sawah (C = 0.70)"
+                    for m in range(4, 9):
+                        st.session_state[f"sel_crop_m_{m}"] = "🌽 Palawija / Jagung (C = 0.50)"
+                    for m in range(9, 13):
+                        st.session_state[f"sel_crop_m_{m}"] = "🥬 Hortikultura / Sayur (C = 0.60)"
+                    st.rerun()
+            with col_p2:
+                if st.button("🌾 Padi (Jan-Mar) ➔ 🌽 Palawija (Apr-Des)", use_container_width=True, help="Jan-Mar: Padi (C=0.70), Apr-Des: Palawija (C=0.50)"):
+                    for m in range(1, 4):
+                        st.session_state[f"sel_crop_m_{m}"] = "🌾 Padi Sawah (C = 0.70)"
+                    for m in range(4, 13):
+                        st.session_state[f"sel_crop_m_{m}"] = "🌽 Palawija / Jagung (C = 0.50)"
+                    st.rerun()
+            with col_p3:
+                if st.button("🏛️ Standar PUPR (MT1-MT2-MT3)", use_container_width=True, help="Pola Standar KP-01: MT1 Nov-Feb Padi, MT2 Mar-Jun Padi, MT3 Jul-Okt Palawija"):
+                    for m in [1, 2, 3, 4, 5, 6, 11, 12]:
+                        st.session_state[f"sel_crop_m_{m}"] = "🌾 Padi Sawah (C = 0.70)"
+                    for m in [7, 8, 9, 10]:
+                        st.session_state[f"sel_crop_m_{m}"] = "🌽 Palawija / Jagung (C = 0.50)"
+                    st.rerun()
+            with col_p4:
+                if st.button("🔄 Reset Semua Padi (C = 0.70)", use_container_width=True):
+                    for m in range(1, 13):
+                        st.session_state[f"sel_crop_m_{m}"] = "🌾 Padi Sawah (C = 0.70)"
+                    st.rerun()
+
+            st.write("")
+
+            # Baris 2: Fitur Terapkan ke Beberapa Bulan Sekaligus
+            with st.expander("🎯 Terapkan Jenis Tanaman ke Beberapa Bulan Sekaligus (Fitur Cepat)", expanded=False):
+                col_b_months, col_b_crop, col_b_btn = st.columns([2.5, 2.0, 1.2])
+                with col_b_months:
+                    bulk_months = st.multiselect(
+                        "Pilih Bulan yang Ingin Diubah:",
+                        options=MONTH_NAMES_LIST,
+                        placeholder="Pilih satu atau lebih bulan...",
+                        key="wb_bulk_months_select"
+                    )
+                with col_b_crop:
+                    bulk_crop_choice = st.selectbox(
+                        "Pilih Jenis Tanaman & Koefisien (C):",
+                        options=CROP_OPTION_LIST,
+                        key="wb_bulk_crop_select"
+                    )
+                with col_b_btn:
+                    st.write("")
+                    st.write("")
+                    if st.button("👉 Terapkan", type="primary", use_container_width=True, key="wb_btn_apply_bulk"):
+                        if bulk_months:
+                            for m_name in bulk_months:
+                                m_idx = MONTH_NAMES_LIST.index(m_name) + 1
+                                st.session_state[f"sel_crop_m_{m_idx}"] = bulk_crop_choice
+                            st.success(f"Berhasil menerapkan {bulk_crop_choice} ke bulan: {', '.join(bulk_months)}!")
+                            st.rerun()
+                        else:
+                            st.warning("Pilih minimal 1 bulan terlebih dahulu.")
+
+            # Baris 3: Dropdown Pilihan Interaktif 12 Bulan (4 Triwulan)
+            with st.expander("📋 Rincian Pilihan Jenis Tanaman & Koefisien (C) per Bulan (12 Bulan Lengkap)", expanded=True):
+                col_q1, col_q2, col_q3, col_q4 = st.columns(4)
+                quarters = [
+                    (col_q1, "🌱 Triwulan I (Jan - Mar)", range(1, 4)),
+                    (col_q2, "🌾 Triwulan II (Apr - Jun)", range(4, 7)),
+                    (col_q3, "🌽 Triwulan III (Jul - Sep)", range(7, 10)),
+                    (col_q4, "🥬 Triwulan IV (Okt - Des)", range(10, 13)),
+                ]
+                for col_q, q_title, m_range in quarters:
+                    with col_q:
+                        st.markdown(f"**{q_title}**")
+                        for m in m_range:
+                            m_name = MONTH_NAMES_LIST[m - 1]
+                            curr_val = st.session_state.get(f"sel_crop_m_{m}", "🌾 Padi Sawah (C = 0.70)")
+                            curr_idx = CROP_OPTION_LIST.index(curr_val) if curr_val in CROP_OPTION_LIST else 0
+                            st.selectbox(
+                                f"{m_name}:",
+                                options=CROP_OPTION_LIST,
+                                index=curr_idx,
+                                key=f"sel_crop_m_{m}"
+                            )
+
+    # Susun monthly_c dan monthly_crops
+    monthly_c = {}
+    monthly_crops = {}
+    if crop_mode == "🌱 1 Tanaman Seragam (12 Bulan)":
+        if "Palawija" in uniform_crop_choice:
+            u_crop, u_c = "Palawija", 0.50
+        elif "Hortikultura" in uniform_crop_choice:
+            u_crop, u_c = "Hortikultura", 0.60
+        else:
+            u_crop, u_c = "Padi", 0.70
+        for m in range(1, 13):
+            monthly_c[m] = u_c
+            monthly_crops[m] = u_crop
+        crop_key = u_crop
+        is_multi_crop = False
     else:
-        crop_key = "Padi"
+        for m in range(1, 13):
+            val_str = st.session_state.get(f"sel_crop_m_{m}", "🌾 Padi Sawah (C = 0.70)")
+            c_name, c_num = CROP_OPTION_MAP.get(val_str, ("Padi", 0.70))
+            monthly_c[m] = c_num
+            monthly_crops[m] = c_name
+        unique_crops = set(monthly_crops.values())
+        is_multi_crop = len(unique_crops) > 1
+        crop_key = "Pola Tanam Bergantian" if is_multi_crop else list(unique_crops)[0]
 
     # Tentukan sumber dataset (Disesuaikan dengan stasiun dan filter sidebar)
     if "Sesuai Filter Sidebar" in weibull_src_choice:
@@ -1231,6 +1372,9 @@ with tab_weibull:
             df=df_w_target,
             station=stn_query,
             crop_type=crop_key,
+            crop_c=0.70 if is_multi_crop else monthly_c.get(1, 0.70),
+            monthly_c=monthly_c,
+            monthly_crops=monthly_crops,
             infill_method=infill_method_wb
         )
     except Exception as e:
@@ -1263,8 +1407,8 @@ with tab_weibull:
                 )
                 col_wk2.metric(
                     "Koefisien Tanaman (C)",
-                    f"{annual_row.get('Koefisien (C)', 0.7):.2f}",
-                    help=f"Koefisien tanaman {crop_key} (Standar KP-01 Ditjen Pengairan)"
+                    f"{annual_row.get('Koefisien (C)', 0.7):.2f}" + (" (Rata-rata)" if is_multi_crop else ""),
+                    help=f"Koefisien tanaman {'rata-rata tertimbang tahunan' if is_multi_crop else crop_key} (Standar KP-01 Ditjen Pengairan)"
                 )
                 col_wk3.metric(
                     "Debit / CH Efektif Q80",
@@ -1312,10 +1456,13 @@ with tab_weibull:
                 stn_caption = f"Rata-rata Kawasan ({n_stn} Stasiun Terpilih di Sidebar)"
             else:
                 stn_caption = f"Stasiun {selected_w_stn}"
-            st.caption(f"Hasil perhitungan untuk **{stn_caption}** | Deret Data: **{yr_range_label}** | Jenis Tanaman: **{crop_key}** (Koefisien C = {weibull_results.get('crop_coef', 0.7):.2f})")
+            crop_info_caption = f"Pola Tata Tanam: **{crop_key}** (Koefisien C Rata-rata = {annual_row.get('Koefisien (C)', 0.7):.2f})" if is_multi_crop else f"Jenis Tanaman: **{crop_key}** (Koefisien C = {weibull_results.get('crop_coef', 0.7):.2f})"
+            st.caption(f"Hasil perhitungan untuk **{stn_caption}** | Deret Data: **{yr_range_label}** | {crop_info_caption}")
             
             w_col_config = {
                 "No": st.column_config.NumberColumn("No", format="%d"),
+                "Bulan / Periode": st.column_config.TextColumn("Bulan / Periode"),
+                "Jenis Tanaman": st.column_config.TextColumn("Pola Tanaman"),
                 "Hari": st.column_config.NumberColumn("Hari", format="%d"),
                 "R80 Curah Hujan (mm)": st.column_config.NumberColumn("R80 Curah Hujan (mm)", format="%.1f"),
                 "Koefisien (C)": st.column_config.NumberColumn("Koefisien (C)", format="%.2f"),
@@ -1437,6 +1584,7 @@ with tab_weibull:
             col_w_dl1, col_w_dl2, col_w_dl_sp = st.columns([2, 2, 3])
 
             clean_stn_slug = re.sub(r'[^\w\-_\. ]', '_', str(selected_w_stn)).strip().replace(" ", "_")
+            clean_crop_slug = re.sub(r'[^\w\-_\. ]', '_', str(crop_key)).strip().replace(" ", "_")
 
             with col_w_dl1:
                 with st.spinner("Menyiapkan file Excel Weibull (lengkap dengan grafik visual & 2 sheet)..."):
@@ -1447,7 +1595,7 @@ with tab_weibull:
                 st.download_button(
                     label="📥 Unduh Laporan Weibull (Excel .xlsx)",
                     data=wb_excel_out.getvalue(),
-                    file_name=f"Laporan_Weibull_{clean_stn_slug}_{crop_key}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    file_name=f"Laporan_Weibull_{clean_stn_slug}_{clean_crop_slug}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
@@ -1461,7 +1609,7 @@ with tab_weibull:
                 st.download_button(
                     label="📄 Unduh Laporan Weibull (PDF .pdf)",
                     data=wb_pdf_out.getvalue(),
-                    file_name=f"Laporan_Weibull_{clean_stn_slug}_{crop_key}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    file_name=f"Laporan_Weibull_{clean_stn_slug}_{clean_crop_slug}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )

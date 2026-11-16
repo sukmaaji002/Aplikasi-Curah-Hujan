@@ -1226,11 +1226,19 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
     ws1["A12"] = "1. Tabel Curah Hujan R80 & Debit Andalan Q80 Bulanan"
     ws1["A12"].font = font_section
 
-    headers_wb = [
-        "No", "Bulan / Periode", "Hari", "R80 Curah Hujan (mm)",
-        "Koefisien (C)", "Q80 Andalan Irigasi (mm)", "Q80 Rata-rata (mm/hari)",
-        "Q80 Debit Irigasi (L/detik)"
-    ]
+    has_crop_col = "Jenis Tanaman" in wb_sum.columns
+    if has_crop_col:
+        headers_wb = [
+            "No", "Bulan / Periode", "Hari", "Pola Tanaman",
+            "Koefisien (C)", "R80 Curah Hujan (mm)", "Q80 Andalan Irigasi (mm)", "Q80 Rata-rata (mm/hari)",
+            "Q80 Debit Irigasi (L/detik)"
+        ]
+    else:
+        headers_wb = [
+            "No", "Bulan / Periode", "Hari", "R80 Curah Hujan (mm)",
+            "Koefisien (C)", "Q80 Andalan Irigasi (mm)", "Q80 Rata-rata (mm/hari)",
+            "Q80 Debit Irigasi (L/detik)"
+        ]
     for col_idx, h in enumerate(headers_wb, 1):
         cell = ws1.cell(row=13, column=col_idx, value=h)
         cell.font = font_header
@@ -1247,7 +1255,10 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
             border_use = double_bottom if is_tot else thin_border
 
             for c_idx, h in enumerate(headers_wb, 1):
-                val = r_data.get(h, r_data.get("Q80 Debit Irigasi (L/detik/ha)", ""))
+                if h == "Pola Tanaman":
+                    val = r_data.get("Jenis Tanaman", "-")
+                else:
+                    val = r_data.get(h, r_data.get("Q80 Debit Irigasi (L/detik/ha)", ""))
                 cell = ws1.cell(row=cur_row, column=c_idx)
                 cell.font = f_use
                 cell.fill = fill_use
@@ -1261,6 +1272,9 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
                     cell.alignment = align_center if not is_tot else align_left
                 elif h == "Hari":
                     cell.value = int(val) if pd.notna(val) else ""
+                    cell.alignment = align_center
+                elif h == "Pola Tanaman":
+                    cell.value = str(val)
                     cell.alignment = align_center
                 elif h in ["R80 Curah Hujan (mm)", "Q80 Andalan Irigasi (mm)"]:
                     cell.value = float(val) if pd.notna(val) else 0.0
@@ -1338,7 +1352,7 @@ def export_weibull_to_excel(weibull_data: dict, filter_info: dict = None) -> io.
 
     for col in ws1.columns:
         col_letter = get_column_letter(col[0].column)
-        if col_letter <= 'I':
+        if col[0].column <= 10:
             max_len = max(len(str(cell.value or '')) for cell in col)
             ws1.column_dimensions[col_letter].width = max(max_len + 3, 13)
 
@@ -1638,7 +1652,14 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
 
     # Section 1: Monthly Summary Table
     story.append(Paragraph("1. Tabel Curah Hujan R80 & Debit Andalan Q80 Bulanan", section_style))
-    wb_cols = ["No", "Bulan / Periode", "Hari", "R80 Hujan (mm)", "Koef (C)", "Q80 Irigasi (mm)", "Q80 (mm/hari)", "Q80 Debit (L/detik)"]
+    has_crop_col = "Jenis Tanaman" in wb_sum.columns
+    if has_crop_col:
+        wb_cols = ["No", "Bulan / Periode", "Pola Tanaman", "Hari", "R80 Hujan (mm)", "Koef (C)", "Q80 Irigasi (mm)", "Q80 (mm/hari)", "Q80 Debit (L/detik)"]
+        col_widths_wb = [30, 95, 115, 45, 80, 60, 95, 95, 110]
+    else:
+        wb_cols = ["No", "Bulan / Periode", "Hari", "R80 Hujan (mm)", "Koef (C)", "Q80 Irigasi (mm)", "Q80 (mm/hari)", "Q80 Debit (L/detik)"]
+        col_widths_wb = [35, 115, 50, 95, 65, 110, 105, 120]
+
     wb_table_data = [[Paragraph(f"<b>{col}</b>", body_bold) for col in wb_cols]]
 
     if not wb_sum.empty:
@@ -1647,19 +1668,25 @@ def export_weibull_to_pdf(weibull_data: dict, filter_info: dict = None) -> io.By
             r_style = body_bold if is_tot else body_style
             no_str = "" if is_tot else str(int(r["No"])) if pd.notna(r["No"]) else ""
             q_val = float(r.get("Q80 Debit Irigasi (L/detik)", r.get("Q80 Debit Irigasi (L/detik/ha)", 0)))
+            
             row = [
                 Paragraph(no_str, r_style),
                 Paragraph(str(r["Bulan / Periode"]), r_style),
+            ]
+            if has_crop_col:
+                row.append(Paragraph(str(r.get("Jenis Tanaman", "-")), r_style))
+            
+            row.extend([
                 Paragraph(str(int(r["Hari"])) if pd.notna(r["Hari"]) else "", r_style),
                 Paragraph(f"{float(r['R80 Curah Hujan (mm)']):,.1f}", r_style),
                 Paragraph(f"{float(r['Koefisien (C)']):,.2f}", r_style),
                 Paragraph(f"{float(r['Q80 Andalan Irigasi (mm)']):,.1f}", r_style),
                 Paragraph(f"{float(r['Q80 Rata-rata (mm/hari)']):,.2f}", r_style),
                 Paragraph(f"{q_val:,.3f}", r_style),
-            ]
+            ])
             wb_table_data.append(row)
 
-    wb_pdf_table = Table(wb_table_data, colWidths=[35, 115, 50, 95, 65, 110, 105, 120])
+    wb_pdf_table = Table(wb_table_data, colWidths=col_widths_wb)
     wb_pdf_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0F766E")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
