@@ -1687,6 +1687,29 @@ with tab_input:
             # Deteksi tanggal yang berstatus RUSAK pada data awal
             existing_rusak_days = [d for d in range(1, days_in_month + 1) if existing_map.get(d, {}).get("Status") == "RUSAK"]
 
+            # Callback helpers untuk sinkronisasi tombol cepat, multiselect, dan checkbox tabel
+            def set_all_days_status(stn, yr, mo, total_days, is_rusak=True):
+                for d_i in range(1, total_days + 1):
+                    st.session_state[f"chk_rsk_tbl_{stn}_{yr}_{mo}_{d_i}"] = is_rusak
+                st.session_state[f"rusak_pick_{stn}_{yr}_{mo}"] = list(range(1, total_days + 1)) if is_rusak else []
+                st.session_state.pop(f"editor_{stn}_{yr}_{mo}", None)
+
+            def on_rusak_multiselect_change(stn, yr, mo, total_days):
+                selected = st.session_state.get(f"rusak_pick_{stn}_{yr}_{mo}", [])
+                for d_i in range(1, total_days + 1):
+                    st.session_state[f"chk_rsk_tbl_{stn}_{yr}_{mo}_{d_i}"] = (d_i in selected)
+                st.session_state.pop(f"editor_{stn}_{yr}_{mo}", None)
+
+            def on_single_checkbox_change(stn, yr, mo, d_idx):
+                val = st.session_state.get(f"chk_rsk_tbl_{stn}_{yr}_{mo}_{d_idx}", False)
+                curr_selected = set(st.session_state.get(f"rusak_pick_{stn}_{yr}_{mo}", []))
+                if val:
+                    curr_selected.add(d_idx)
+                else:
+                    curr_selected.discard(d_idx)
+                st.session_state[f"rusak_pick_{stn}_{yr}_{mo}"] = sorted(list(curr_selected))
+                st.session_state.pop(f"editor_{stn}_{yr}_{mo}", None)
+
             st.markdown("---")
             st.markdown("###### ⚙️ Opsi & Pilihan Status Alat (Normal / RUSAK)")
             col_opt1, col_opt2 = st.columns([3, 2])
@@ -1697,8 +1720,29 @@ with tab_input:
                     default=existing_rusak_days,
                     format_func=lambda d: f"Tgl {d} ({int(bulk_yr)}-{int(bulk_m):02d}-{d:02d})",
                     help="Pilih tanggal-tanggal di mana sensor pengukur hujan rusak pada bulan ini. Tanggal yang Anda pilih otomatis ditandai RUSAK di tabel bawah.",
-                    key=f"rusak_pick_{bulk_stn}_{bulk_yr}_{bulk_m}"
+                    key=f"rusak_pick_{bulk_stn}_{bulk_yr}_{bulk_m}",
+                    on_change=on_rusak_multiselect_change,
+                    args=(bulk_stn, bulk_yr, bulk_m, days_in_month)
                 )
+                col_b_opt1, col_b_opt2 = st.columns(2)
+                with col_b_opt1:
+                    st.button(
+                        "🔴 Set Seluruh Hari RUSAK",
+                        key=f"btn_all_rsk_opt_{bulk_stn}_{bulk_yr}_{bulk_m}",
+                        on_click=set_all_days_status,
+                        args=(bulk_stn, bulk_yr, bulk_m, days_in_month, True),
+                        use_container_width=True,
+                        help="Tandai seluruh hari pada bulan ini berstatus Alat RUSAK (nilai curah hujan 0.0 mm / diarsir hitam)"
+                    )
+                with col_b_opt2:
+                    st.button(
+                        "🟢 Reset Semua Normal",
+                        key=f"btn_all_norm_opt_{bulk_stn}_{bulk_yr}_{bulk_m}",
+                        on_click=set_all_days_status,
+                        args=(bulk_stn, bulk_yr, bulk_m, days_in_month, False),
+                        use_container_width=True,
+                        help="Kembalikan seluruh hari pada bulan ini ke status Normal"
+                    )
             with col_opt2:
                 bulk_view_style = st.radio(
                     "Pilihan Model Pengisian:",
@@ -1715,6 +1759,36 @@ with tab_input:
                     f"💡 Menampilkan {days_in_month} hari untuk **Stasiun {bulk_stn}** — Bulan **{MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}**. "
                     "Ketika kotak **Alat Rusak** dicentang, status otomatis berubah menjadi **RUSAK**, dan kotak isian curah hujan otomatis **terkunci (tidak dapat diisi) serta nilainya berubah menjadi 0.0 mm**."
                 )
+
+                # Action Bar Tombol Cepat Tepat di Atas Tabel
+                with st.container(border=True):
+                    col_bar_info, col_bar_btn1, col_bar_btn2 = st.columns([4.2, 3.2, 2.6])
+                    with col_bar_info:
+                        st.markdown(
+                            "<div style='padding-top: 3px;'>"
+                            "<strong>⚡ Aksi Cepat Status Alat (1 Bulan Penuh):</strong><br>"
+                            "<span style='font-size: 0.85rem; color: #475569;'>Klik tombol untuk mengubah seluruh hari sekaligus tanpa perlu mencentang satu per satu:</span>"
+                            "</div>",
+                            unsafe_allow_html=True
+                        )
+                    with col_bar_btn1:
+                        st.button(
+                            "🔴 Tandai Semua Hari RUSAK",
+                            key=f"btn_all_rsk_tbl_{bulk_stn}_{bulk_yr}_{bulk_m}",
+                            on_click=set_all_days_status,
+                            args=(bulk_stn, bulk_yr, bulk_m, days_in_month, True),
+                            use_container_width=True,
+                            help=f"Klik untuk otomatis mencentang status ALAT RUSAK pada seluruh {days_in_month} hari di bulan ini (kolom CH terkunci 0.0 mm dan berstatus RUSAK)"
+                        )
+                    with col_bar_btn2:
+                        st.button(
+                            "🟢 Reset Semua Normal",
+                            key=f"btn_all_norm_tbl_{bulk_stn}_{bulk_yr}_{bulk_m}",
+                            on_click=set_all_days_status,
+                            args=(bulk_stn, bulk_yr, bulk_m, days_in_month, False),
+                            use_container_width=True,
+                            help="Klik untuk mengembalikan seluruh hari di bulan ini ke status Normal"
+                        )
 
                 # Header Tabel
                 with st.container(border=True):
@@ -1740,6 +1814,8 @@ with tab_input:
                             "Alat Rusak",
                             value=init_rusak,
                             key=f"chk_rsk_tbl_{bulk_stn}_{bulk_yr}_{bulk_m}_{d}",
+                            on_change=on_single_checkbox_change,
+                            args=(bulk_stn, bulk_yr, bulk_m, d),
                             help=f"Centang jika alat rusak pada tgl {d}"
                         )
 
@@ -1813,6 +1889,28 @@ with tab_input:
                 df_grid = pd.DataFrame(grid_data)
 
                 st.info(f"💡 Mode Grid Spreadsheet: Ubah kolom **Status Alat** menjadi **RUSAK** jika alat rusak. Nilai curah hujan untuk status RUSAK otomatis dikosongkan dan diarsir hitam saat disimpan.")
+
+                col_g_act1, col_g_act2, col_g_info = st.columns([3, 2.5, 4.5])
+                with col_g_act1:
+                    st.button(
+                        "🔴 Set Semua Grid RUSAK (1 Bulan)",
+                        key=f"btn_all_rsk_grid_{bulk_stn}_{bulk_yr}_{bulk_m}",
+                        on_click=set_all_days_status,
+                        args=(bulk_stn, bulk_yr, bulk_m, days_in_month, True),
+                        use_container_width=True,
+                        help="Set seluruh baris dalam grid bulan ini menjadi RUSAK (0.0 mm)"
+                    )
+                with col_g_act2:
+                    st.button(
+                        "🟢 Reset Semua Grid Normal",
+                        key=f"btn_all_norm_grid_{bulk_stn}_{bulk_yr}_{bulk_m}",
+                        on_click=set_all_days_status,
+                        args=(bulk_stn, bulk_yr, bulk_m, days_in_month, False),
+                        use_container_width=True,
+                        help="Kembalikan seluruh baris dalam grid bulan ini menjadi Normal"
+                    )
+                with col_g_info:
+                    st.caption("⚡ *Tombol di atas otomatis mengatur status grid 1 bulan penuh.*")
 
                 edited_df = st.data_editor(
                     df_grid,
