@@ -292,7 +292,7 @@ with st.sidebar:
             <img src="data:image/png;base64,{logo_sidebar_b64}" style="height: 48px; max-width: 140px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4)); margin-bottom: 6px;" />
             <div style="font-size: 0.78rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.5px; line-height: 1.2;">DINAS PEKERJAAN UMUM DAN PENATAAN RUANG</div>
             <div style="font-size: 0.85rem; font-weight: 800; color: #FDE047; letter-spacing: 0.8px;">KABUPATEN TEGAL</div>
-            <div style="font-size: 0.70rem; color: #BAE6FD; margin-top: 3px;">Bidang Sumber Daya Air & Irigasi</div>
+            <div style="font-size: 0.70rem; color: #BAE6FD; margin-top: 3px;">Bidang Sumber Daya Air dan Jasa Konstruksi</div>
         </div>
         """, unsafe_allow_html=True)
     else:
@@ -514,13 +514,13 @@ if logo_main_b64:
         </div>
         <div class="pupr-header-badges">
             <span class="pupr-badge pupr-badge-primary">🏛️ DPUPR KAB. TEGAL</span>
-            <span class="pupr-badge pupr-badge-gold">🌊 Bidang SDA & Irigasi</span>
+            <span class="pupr-badge pupr-badge-gold">🌊 Bidang SDA & Jasa Konstruksi</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
 else:
     st.title("🏛️ DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL")
-    st.caption("Bidang Sumber Daya Air & Irigasi — Sistem Analisis Data Curah Hujan & Hidrologi")
+    st.caption("Bidang Sumber Daya Air dan Jasa Konstruksi — Sistem Analisis Data Curah Hujan & Hidrologi")
 
 st.markdown(
     f"Hasil filter data hidrologi sesuai kriteria sidebar: "
@@ -665,7 +665,7 @@ matrix_download = all_matrices_export.get((mat_stn, mat_year), None)
 stn_str_label = ", ".join(selected_stations[:5]) + ("..." if len(selected_stations) > 5 else "")
 filter_info_dict = {
     "instansi": "DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL",
-    "proyek": "Bidang Sumber Daya Air & Irigasi",
+    "proyek": "Bidang Sumber Daya Air dan Jasa Konstruksi",
     "periode": filter_periode_str,
     "stasiun": f"{len(selected_stations)} Stasiun ({stn_str_label})",
     "kategori": f"{'Hari Hujan > 0mm' if only_rain_days else 'Semua Nilai'} ({ch_range[0]}-{ch_range[1]} mm)",
@@ -1441,7 +1441,7 @@ with tab_weibull:
                 with st.spinner("Menyiapkan file Excel Weibull (lengkap dengan grafik visual & 2 sheet)..."):
                     wb_excel_out = export_weibull_to_excel(
                         weibull_data=wb_exp_dict,
-                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice, "instansi": "DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL", "proyek": "Bidang Sumber Daya Air & Irigasi"}
+                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice, "instansi": "DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL", "proyek": "Bidang Sumber Daya Air dan Jasa Konstruksi"}
                     )
                 st.download_button(
                     label="📥 Unduh Laporan Weibull (Excel .xlsx)",
@@ -1455,7 +1455,7 @@ with tab_weibull:
                 with st.spinner("Menyiapkan file PDF Weibull (lengkap dengan visual grafik & kurva durasi)..."):
                     wb_pdf_out = export_weibull_to_pdf(
                         weibull_data=wb_exp_dict,
-                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice, "instansi": "DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL", "proyek": "Bidang Sumber Daya Air & Irigasi"}
+                        filter_info={"stasiun": selected_w_stn, "komoditas": crop_key, "basis": weibull_src_choice, "instansi": "DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL", "proyek": "Bidang Sumber Daya Air dan Jasa Konstruksi"}
                     )
                 st.download_button(
                     label="📄 Unduh Laporan Weibull (PDF .pdf)",
