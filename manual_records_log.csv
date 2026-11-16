@@ -3,3 +3,4 @@ Waktu_Input,Aksi,Stasiun,Tanggal_Periode,Curah_Hujan,Status,Kategori
 2026-11-10 23:23:53,UPDATE,21b,2026-07-01,None,RUSAK,Sensor Rusak
 2026-11-10 23:31:44,UPDATE,21b,2026-11-10,10.0,Normal,Hujan Ringan (5 - 20 mm)
 2026-11-16 12:33:30,UPDATE,21b,2026-11-16,5.0,Normal,Hujan Sangat Ringan (0.1 - 5 mm)
+2026-11-16 12:37:45,UPDATE,21b,2026-11-16,0.0,Normal,Berawan / Tanpa Hujan (0 mm)
