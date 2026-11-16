@@ -549,6 +549,7 @@ else:
 hari_hujan_count = (valid_ch > 0).sum()
 hari_kering_count = (valid_ch == 0).sum()
 rusak_count = (filtered_df["Status"] == "RUSAK").sum()
+belum_ada_count = (filtered_df["Status"].isin(["Belum Ada Data", "Kosong"])).sum()
 
 # Tampilkan Kartu KPI dalam Kotak Rapi
 with st.container(border=True):
@@ -558,7 +559,7 @@ with st.container(border=True):
     col_m3.metric("CH Maksimum", f"{max_ch:,.1f} mm", help=f"Terjadi pada {max_info}")
     col_m4.metric("Hari Hujan (>0mm)", f"{hari_hujan_count:,}")
     col_m5.metric("Hari Kering (0mm)", f"{hari_kering_count:,}")
-    col_m6.metric("Total Data Baris", f"{len(filtered_df):,}")
+    col_m6.metric("Alat Rusak / Belum Isi", f"{rusak_count:,} / {belum_ada_count:,}", help=f"Sensor Rusak: {rusak_count:,} hari, Belum Ada Data: {belum_ada_count:,} hari (Total Data: {len(filtered_df):,} baris)")
 
 # Banner Akses Cepat & Navigasi
 with st.container(border=True):

@@ -1,5 +1,6 @@
 import openpyxl
 import pandas as pd
+import numpy as np
 import datetime
 import calendar
 import os
@@ -47,8 +48,8 @@ def classify_bmkg(val: float, status: str) -> str:
     """Klasifikasi curah hujan harian menurut standar BMKG."""
     if status == "RUSAK":
         return "Sensor Rusak"
-    if pd.isna(val):
-        return "Data Kosong"
+    if status in ("Belum Ada Data", "Kosong") or val is None or pd.isna(val):
+        return "Belum Ada Data"
     if val <= 0:
         return "Berawan / Tanpa Hujan (0 mm)"
     elif val <= 5.0:
@@ -146,7 +147,8 @@ def parse_rainfall_csv(file_or_text) -> pd.DataFrame:
                         rain_val = None
 
                         if not val_cell or val_cell == "-":
-                            rain_val = 0.0
+                            status = "Belum Ada Data"
+                            rain_val = None
                         elif "RUSAK" in val_cell.upper():
                             status = "RUSAK"
                             rain_val = None
@@ -154,6 +156,7 @@ def parse_rainfall_csv(file_or_text) -> pd.DataFrame:
                             try:
                                 s_clean = val_cell.replace(",", ".").strip()
                                 rain_val = float(s_clean)
+                                status = "Normal"
                             except ValueError:
                                 status = "Error"
                                 rain_val = None
@@ -275,18 +278,22 @@ def parse_rainfall_workbook(file_path_or_bytes) -> pd.DataFrame:
                             status = "RUSAK"
                             rain_val = None
                         elif cell_val is None:
-                            rain_val = 0.0
+                            status = "Belum Ada Data"
+                            rain_val = None
                         elif isinstance(cell_val, (int, float)):
                             rain_val = float(cell_val)
+                            status = "Normal"
                         else:
                             s = str(cell_val).strip().upper()
                             if s == "" or s == "-":
-                                rain_val = 0.0
+                                status = "Belum Ada Data"
+                                rain_val = None
                             else:
                                 # Parsing angka desimal dengan koma (format Indonesia: 3,5 -> 3.5)
                                 try:
                                     s_clean = s.replace(",", ".")
                                     rain_val = float(s_clean)
+                                    status = "Normal"
                                 except ValueError:
                                     status = "Error"
                                     rain_val = None
@@ -388,10 +395,12 @@ def get_monthly_matrix(df: pd.DataFrame, station: str, year: int, months: list =
 
     # Tambahkan baris statistik hidrologi di bawah (sebelum menandai sel rusak)
     numeric_piv = piv.apply(pd.to_numeric, errors='coerce')
-    total_row = numeric_piv.sum(skipna=True)
+    has_valid_data = numeric_piv.notna().any()
+    total_row = numeric_piv.sum(skipna=True, min_count=1)
     mean_row = numeric_piv.mean(skipna=True).round(1)
     max_row = numeric_piv.max(skipna=True)
-    rain_days = (numeric_piv > 0).sum(skipna=True)
+    rain_days = (numeric_piv > 0).sum(skipna=True).astype(float)
+    rain_days[~has_valid_data] = np.nan
 
     summary_rows = pd.DataFrame([total_row, mean_row, max_row, rain_days],
                                 index=["JUMLAH", "RATA-RATA", "MAKSIMUM", "HARI HUJAN"])
@@ -408,6 +417,18 @@ def get_monthly_matrix(df: pd.DataFrame, station: str, year: int, months: list =
             if m_val in target_months and d_val in piv.index:
                 m_col = MONTH_NAMES_ID[m_val][:3]
                 piv.loc[d_val, m_col] = "RUSAK"
+        except Exception:
+            pass
+
+    # Tandai tanggal di mana data belum ada / belum diisi dengan "-"
+    kosong_subset = subset[subset["Status"].isin(["Belum Ada Data", "Kosong"])]
+    for _, r_ks in kosong_subset.iterrows():
+        try:
+            d_val = int(r_ks["Hari"])
+            m_val = int(r_ks["Bulan"])
+            if m_val in target_months and d_val in piv.index:
+                m_col = MONTH_NAMES_ID[m_val][:3]
+                piv.loc[d_val, m_col] = "-"
         except Exception:
             pass
 
@@ -433,10 +454,10 @@ def get_cross_station_monthly_matrix(df: pd.DataFrame, year: int = None, months:
     if sub.empty or not target_months:
         return pd.DataFrame()
 
-    piv = sub.groupby(["Stasiun", "Bulan"])["Curah_Hujan"].sum().unstack(level="Bulan")
+    piv = sub.groupby(["Stasiun", "Bulan"])["Curah_Hujan"].sum(min_count=1).unstack(level="Bulan")
     piv = piv.reindex(columns=target_months)
     piv.columns = [MONTH_NAMES_ID[m][:3] for m in target_months]
-    piv["TOTAL (mm)"] = piv.sum(axis=1).round(1)
+    piv["TOTAL (mm)"] = piv.sum(axis=1, min_count=1).round(1)
     return piv.round(1)
 
 def get_pmax_cross_matrix(df: pd.DataFrame) -> pd.DataFrame:

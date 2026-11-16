@@ -57,7 +57,7 @@ def infill_missing_rainfall(
         return df.copy(), pd.DataFrame()
 
     df_out = df.copy()
-    damaged_mask = (df_out["Status"] == "RUSAK") | (df_out["Curah_Hujan"].isna())
+    damaged_mask = (df_out["Status"] == "RUSAK")
     damaged_idx = df_out[damaged_mask].index
 
     if len(damaged_idx) == 0:
@@ -439,13 +439,14 @@ def calculate_dependable_flow_and_rainfall(
                     "crop_info": {}, "infill_count": 0, "infill_log": pd.DataFrame()
                 }
             monthly_matrix = sub.groupby(["Tahun", "Bulan"])["Curah_Hujan"].sum().unstack(level="Bulan")
-            annual_series = sub.groupby("Tahun")["Curah_Hujan"].sum()
+            complete_years = monthly_matrix.dropna(subset=[m for m in range(1, 13) if m in monthly_matrix.columns], how='any').index
+            annual_series = monthly_matrix.loc[complete_years].sum(axis=1) if len(complete_years) > 0 else sub.groupby("Tahun")["Curah_Hujan"].sum()
         else:
             # RATA-RATA KAWASAN (Rata-rata curah hujan antar stasiun, BUKAN dijumlahkan!)
             stn_m = sub.groupby(["Stasiun", "Tahun", "Bulan"])["Curah_Hujan"].sum().reset_index()
             monthly_matrix = stn_m.groupby(["Tahun", "Bulan"])["Curah_Hujan"].mean().unstack(level="Bulan")
-            stn_y = sub.groupby(["Stasiun", "Tahun"])["Curah_Hujan"].sum().reset_index()
-            annual_series = stn_y.groupby("Tahun")["Curah_Hujan"].mean()
+            complete_years = monthly_matrix.dropna(subset=[m for m in range(1, 13) if m in monthly_matrix.columns], how='any').index
+            annual_series = monthly_matrix.loc[complete_years].sum(axis=1) if len(complete_years) > 0 else stn_y.groupby("Tahun")["Curah_Hujan"].mean()
 
         def _natural_stn_sort(s):
             m = re.match(r"^(\d+)([a-zA-Z]*)$", str(s).strip())
