@@ -4,6 +4,7 @@ import numpy as np
 import datetime
 import calendar
 import os
+import shutil
 import csv
 import io
 from typing import Tuple, Dict, Any
@@ -650,8 +651,15 @@ def log_manual_entry(stn, date_or_period, val, status, cat, action):
 
 
 def persist_dataframe(df: pd.DataFrame, parquet_path: str = "data_curah_hujan.parquet") -> bool:
-    """Menyimpan dataframe secara permanen ke file Parquet di disk."""
+    """Menyimpan dataframe secara permanen ke file Parquet di disk dengan backup otomatis."""
     try:
+        # Otomatis buat cadangan (backup) jika file lama sudah ada
+        if os.path.exists(parquet_path):
+            backup_path = parquet_path.replace(".parquet", "_backup.parquet")
+            try:
+                shutil.copy2(parquet_path, backup_path)
+            except Exception:
+                pass
         df.to_parquet(parquet_path, index=False)
         return True
     except Exception as e:
