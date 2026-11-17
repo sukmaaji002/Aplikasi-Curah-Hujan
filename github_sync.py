@@ -167,8 +167,12 @@ def sync_all_database_to_github(commit_message: str = "", secrets_dict=None) -> 
     files_to_sync = ["data_curah_hujan.parquet"]
     if os.path.exists("data_debit_bendung.parquet"):
         files_to_sync.append("data_debit_bendung.parquet")
+    if os.path.exists("data_debit_bendung.xlsx"):
+        files_to_sync.append("data_debit_bendung.xlsx")
     if os.path.exists("manual_records_log.csv"):
         files_to_sync.append("manual_records_log.csv")
+    if os.path.exists("manual_debit_log.csv"):
+        files_to_sync.append("manual_debit_log.csv")
 
     results = {}
     all_success = True

@@ -28,54 +28,49 @@ Telah disiapkan file peluncur praktis langsung di **Desktop** Anda:
 - **Unggah File CSV**: Mendukung file format `.csv`.
 - **Tempel Teks CSV Langsung**: Memungkinkan Anda menempelkan potongan teks data tabel CSV secara langsung.
 
-### 2. Panel Filter Multi-Parameter (Sidebar)
-- **Filter Waktu**:
-  - *Rentang Tanggal Bebas*: Pilih tanggal mulai dan tanggal akhir.
-  - *Pilih Tahun & Bulan Cepat*: Pilih kombinasi tahun (2015–2026) dan bulan (Januari–Desember) dengan tombol pintas *Pilih Semua*.
-  - *Pilihan Musim Cepat*: Musim Hujan (Oktober - April) atau Musim Kemarau (Mei - September).
-- **Filter Stasiun Pengamatan**:
-  - Pilihan multi-select 34 stasiun dengan tombol pintas *Pilih Semua* dan *Reset Pilihan*.
-- **Filter Intensitas Curah Hujan & Kategori BMKG**:
-  - Opsi *Hanya Hari Hujan (> 0 mm)* atau *Hari Tanpa Hujan (0 mm)*.
-  - 7 Kategori BMKG: Berawan/Tanpa Hujan ($0\text{ mm}$), Hujan Sangat Ringan ($0.1–5\text{ mm}$), Ringan ($5–20\text{ mm}$), Sedang ($20–50\text{ mm}$), Lebat ($50–100\text{ mm}$), Sangat Lebat ($100–150\text{ mm}$), dan Ekstrem ($> 150\text{ mm}$).
-  - Slider batas nilai curah hujan harian ($0.0\text{ mm}$ s/d batas maksimum).
-  - Opsi sertakan atau sembunyikan status data sensor rusak.
+### 2. Panel Sidebar Dua Kategori (CURAH HUJAN & DATA DEBIT)
+- **🌧️ Kategori CURAH HUJAN**:
+  - Filter Sumber Data (Data bawaan 2015-2026, upload Excel/CSV, tempel CSV).
+  - Filter Rentang Tanggal, Tahun & Bulan, serta Musim Hujan/Kemarau.
+  - Filter 34 Stasiun Pengamatan dengan tombol cepat.
+  - Filter Intensitas Curah Hujan & Kategori BMKG.
+  - Ekspor Laporan Curah Hujan (Excel & PDF).
+- **💧 Kategori DATA DEBIT**:
+  - Ringkasan Basis Data 4 Bendung (Rajabawah, Pondoh, Kemaron, Lengkong).
+  - Unduh Database Debit Lengkap (.xlsx dan .csv).
+  - Status Cloud Sync GitHub.
 
-### 3. Tampilan & Analisis Data (5 Tab Utama)
+### 3. Tampilan & Analisis Data per Kategori
+
+#### A. Modul CURAH HUJAN:
 - 📋 **Tab 1: Data Detail Harian**:
   - Tampilan 3 tingkat kategorisasi: *Detail Harian (dengan pemilih tahun cepat)*, *Rekapitulasi Bulanan*, dan *Rekapitulasi Tahunan*.
-  - Urutan kolom kategorisasi: `No` $\rightarrow$ `Stasiun` $\rightarrow$ `Tahun` $\rightarrow$ `Bulan` $\rightarrow$ `Hari` $\rightarrow$ `Tanggal` $\rightarrow$ `Curah Hujan` $\rightarrow$ `Kategori BMKG` $\rightarrow$ `Status`.
-- 📅 **Tab 2: Matriks Hidrologi Bulanan (Lengkap untuk Semua Stasiun & Tahun)**:
-  - **Seluruh Matriks**: Menampilkan seluruh tabel matriks standar PU (Tanggal 1–31 vs Bulan Jan–Des + baris *JUMLAH*, *RATA-RATA*, *MAKSIMUM*, *HARI HUJAN*) untuk **semua stasiun yang dipilih** dan **semua tahun terpilih**.
-  - **Matriks Rekap Bulanan Antar Stasiun**: Tabel perbandingan seluruh stasiun vs 12 bulan.
-  - **Matriks Pmax Tahunan**: Matriks nilai curah hujan harian maksimum per stasiun untuk setiap tahun pengamatan.
-  - **Fokus 1 Matriks**: Opsi cepat melihat 1 stasiun dan 1 tahun spesifik.
-- 📈 **Tab 3: Grafik Visualisasi & Tren**:
-  - Grafik tren fluktuasi harian (zoomable dengan range slider).
-  - Grafik batang akumulasi bulanan.
-  - Donut chart proporsi intensitas BMKG.
-  - Ranking stasiun terbasah.
-- 📊 **Tab 4: Ringkasan Statistik Per Stasiun**:
-  - Tabel statistik komprehensif (Total, Rata-rata, Nilai Maksimum, Hari Hujan, Hari Kering, Sensor Rusak).
-- 💧 **Tab 4: Analisis Debit Andalan 4 Bendung Kabupaten Tegal (Metode Weibull Q80)**:
-  - **4 Bendung**: Bendung Rajabawah (D.I. Rajabawah), Bendung Pondoh (D.I. Pondoh), Bendung Kemaron (D.I. Gung, Kemaron), dan Bendung Lengkong (D.I. Lengkong).
-  - **Format Data**: Tersusun dalam 24 periode 1/2 bulanan (Oktober I s/d September II) dalam satuan **Liter/detik (L/s)** dengan deret historis 2004/2005 - 2024/2025.
-  - **Debit Andalan Weibull**: Menghitung ketersediaan debit andalan menggunakan rumus probabilitas terlampaui Weibull: $P = \frac{m}{N + 1} \times 100\%$ khusus keandalan rancang irigasi $80\%$ ($Q_{80}$ / $R_{80}$) serta opsi $50\%$ (Normal), $90\%$ (Kering), dan $95\%$ (Ekstrem).
-  - **Rekap Bulanan**: Menyajikan rekapitulasi per bulan lengkap (Debit Periode I, Periode II, Rata-rata 1/2 Bulanan, dan Debit Bulanan dalam satuan Liter/detik).
-  - **Grafik Interaktif Plotly**:
-    - Hidrograf Debit Andalan 1/2 Bulanan dengan kurva Max-Min dan Rata-rata.
-    - Diagram Batang Rekapitulasi Debit Bulanan.
-    - Hidrograf Komparasi 4 Bendung Sekaligus.
-    - Kurva Durasi Debit (Flow Duration Curve).
-  - **Ekspor Excel Khusus**: Unduh laporan analisis debit andalan bendung format resmi (.xlsx).
-- 🌊 **Tab 5: Analisis Frekuensi & Curah Hujan Rancangan (Kala Ulang)**:
-  - Perhitungan parameter statistik hidrologi: $\bar{X}$, $S$, $C_v$, $C_s$, $C_k$.
-  - Perhitungan Curah Hujan Rancangan Kala Ulang $T = 2, 5, 10, 25, 50, 100$ Tahun menggunakan metode **Gumbel** dan **Log Pearson Tipe III** (Standar SNI Perencanaan Bangunan Air/Drainase).
-  - Kurva pertumbuhan probabilitas curah hujan rancangan.
-- ✍️ **Tab 6: Input Data Curah Hujan Manual**:
-  - **Form Input Tunggal (Cepat)**: Menambah atau mengupdate data satu hari tertentu untuk stasiun yang ada atau stasiun baru. Mendukung status `Normal` (nilai hujan 0.0 s/d 500.0 mm) atau `RUSAK` (alat tidak berfungsi).
-  - **Input Grid 1 Bulan Penuh (Bulk Editor)**: Mengedit atau mengisi seluruh 1 s/d 31 hari dalam satu bulan sekaligus melalui tabel interaktif (`st.data_editor`).
-  - **Penyimpanan Permanen & Riwayat**: Seluruh data yang ditambahkan otomatis disimpan ke database Parquet lokal dan dicatat di riwayat audit trail (`manual_records_log.csv`).
+  - Urutan kolom: `No` $\rightarrow$ `Stasiun` $\rightarrow$ `Tahun` $\rightarrow$ `Bulan` $\rightarrow$ `Hari` $\rightarrow$ `Tanggal` $\rightarrow$ `Curah Hujan` $\rightarrow$ `Kategori BMKG` $\rightarrow$ `Status`.
+- ✍️ **Tab 2: Input Manual Curah Hujan**:
+  - Form input tunggal cepat & Grid bulk editor 1 bulan penuh dengan audit log.
+- 📅 **Tab 3: Matriks Hidrologi Bulanan**:
+  - Matriks standar PU (Tanggal 1–31 vs Bulan Jan–Des), matriks rekap antar stasiun, dan matriks Pmax tahunan.
+- 🌊 **Tab 4: Analisis Frekuensi & Curah Hujan Rancangan (Kala Ulang)**:
+  - Perhitungan statistik ($\bar{X}$, $S$, $C_v$, $C_s$, $C_k$) dan Kala Ulang $T = 2, 5, 10, 25, 50, 100$ Tahun metode Gumbel & Log Pearson Tipe III.
+- 📈 **Tab 5: Grafik Visualisasi & Tren**:
+  - Fluktuasi harian, akumulasi bulanan, proporsi BMKG, dan ranking stasiun terbasah.
+- 📊 **Tab 6: Ringkasan Statistik Per Stasiun**:
+  - Metrik statistik komprehensif seluruh stasiun pengamatan.
+
+#### B. Modul DATA DEBIT:
+- 📋 **Tab 1: Data Debit Bendung**:
+  - Matriks data debit observasi 1/2 bulanan (2004/2005 - 2024/2025) untuk 4 bendung dalam satuan **Liter/detik (L/s)**.
+  - Filter tampilan bendung & tahun hidrologi serta ringkasan statistik per periode.
+  - Unduh data terfilter ke Excel (.xlsx) dan CSV (.csv).
+- ✍️ **Tab 2: Input Debit Manual**:
+  - Form input/edit 1 tahun hidrologi penuh (24 periode 1/2 bulanan: Okt I s/d Sep II).
+  - Spreadsheet editor langsung (`st.data_editor`) untuk pengeditan bulk multi-tahun.
+  - Penyimpanan permanen dan riwayat audit trail (`manual_debit_log.csv`).
+- 💧 **Tab 3: Debit Andalan Bendung (Weibull Q80)**:
+  - Perhitungan debit andalan menggunakan rumus Weibull $P = \frac{m}{N + 1} \times 100\%$ pada keandalan $80\%$ ($Q_{80}$ / $R_{80}$) sesuai Standar Perencanaan Irigasi KP-01 Ditjen SDA PUPR.
+  - Tabel rekapitulasi 1/2 bulanan (24 periode) dan bulanan (12 bulan) dalam satuan Liter/detik.
+  - Hidrograf debit andalan, diagram batang bulanan, kurva durasi debit (FDC), dan komparasi 4 bendung.
+  - Ekspor laporan resmi Excel (.xlsx).
 
 ### 4. Ekspor Data Lengkap (Excel & PDF)
 - 📥 **Ekspor Excel (`.xlsx`)**:

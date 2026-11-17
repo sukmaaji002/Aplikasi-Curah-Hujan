@@ -548,6 +548,295 @@ def export_bendung_debit_to_excel(
     return output
 
 
+DEBIT_LOG_FILE = "manual_debit_log.csv"
+
+
+def save_bendung_dataset(df: pd.DataFrame):
+    """Menyimpan dataframe debit bendung ke parquet dan excel."""
+    df.to_parquet(BENDUNG_PARQUET, index=False)
+    df.to_excel(BENDUNG_EXCEL, index=False)
+
+
+def log_debit_manual_entry(bendung: str, tahun: str, action: str, details: str = ""):
+    """Mencatat aktivitas penambahan/pembaruan data debit bendung ke audit log CSV."""
+    row = {
+        "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Bendung": bendung,
+        "Tahun_Hidrologi": tahun,
+        "Aksi": action,
+        "Keterangan": details
+    }
+    log_df = pd.DataFrame([row])
+    if os.path.exists(DEBIT_LOG_FILE):
+        log_df.to_csv(DEBIT_LOG_FILE, mode="a", header=False, index=False)
+    else:
+        log_df.to_csv(DEBIT_LOG_FILE, mode="w", header=True, index=False)
+
+
+def get_debit_manual_log() -> pd.DataFrame:
+    """Memuat seluruh log pencatatan manual debit bendung."""
+    if os.path.exists(DEBIT_LOG_FILE):
+        try:
+            return pd.read_csv(DEBIT_LOG_FILE)
+        except Exception:
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+
+def add_or_update_bendung_record(bendung: str, tahun: str, period_values: dict, daerah_irigasi: str = "") -> Tuple[bool, str]:
+    """Menambah atau memperbarui baris data debit bendung untuk satu tahun hidrologi."""
+    df = load_bendung_dataset()
+    if df.empty:
+        return False, "Database debit bendung kosong."
+
+    mask = (df["Bendung"] == bendung) & (df["Tahun_Hidrologi"] == tahun)
+    if mask.any():
+        for col, val in period_values.items():
+            if col in df.columns:
+                df.loc[mask, col] = val
+        action = "UPDATE"
+        msg = f"Data debit {bendung} tahun {tahun} berhasil diperbarui!"
+    else:
+        new_row = {"Bendung": bendung, "Tahun_Hidrologi": tahun}
+        if not daerah_irigasi:
+            di_series = df.loc[df["Bendung"] == bendung, "Daerah_Irigasi"]
+            daerah_irigasi = di_series.iloc[0] if not di_series.empty else bendung
+        new_row["Daerah_Irigasi"] = daerah_irigasi
+        for col in SEMI_MONTHLY_COLS:
+            new_row[col] = period_values.get(col, np.nan)
+        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        action = "INSERT"
+        msg = f"Data debit baru {bendung} tahun {tahun} berhasil ditambahkan!"
+
+    save_bendung_dataset(df)
+    log_debit_manual_entry(bendung, tahun, action, f"{len(period_values)} nilai periode disimpan.")
+    return True, msg
+
+
+def render_data_debit_view():
+    """Merender tab Data Debit Bendung (Tabel Matriks 1/2 Bulanan 2004/2005 - 2024/2025)."""
+    df_bendung = load_bendung_dataset()
+    if df_bendung.empty:
+        st.error("Data debit bendung tidak ditemukan. Pastikan data_debit_bendung.parquet tersedia.")
+        return
+
+    with st.container(border=True):
+        st.subheader("📋 Matriks Data Debit 1/2 Bulanan Bendung Kabupaten Tegal")
+        st.caption(
+            "Data historis pengamatan debit bendung tersusun dalam format 24 periode 1/2 bulanan (Oktober I s/d September II) "
+            "dalam satuan **Liter/detik (L/s)** untuk 4 bendung di Kabupaten Tegal."
+        )
+
+    # Metric Badges
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Bendung", "4 Bendung", "Rajabawah, Pondoh, Kemaron, Lengkong")
+    c2.metric("Tahun Pengamatan", f"{len(df_bendung['Tahun_Hidrologi'].unique())} Tahun", "2004/2005 - 2024/2025")
+    c3.metric("Total Record Data", f"{len(df_bendung)} Baris", "24 Periode per Tahun")
+    c4.metric("Satuan Pengukuran", "Liter / Detik (L/s)", "Laju Aliran Debit")
+
+    # Filter Container
+    with st.container(border=True):
+        st.markdown("##### 🔍 Filter Tampilan Data Debit")
+        col_fb, col_fy = st.columns([1.5, 2])
+        with col_fb:
+            b_list = ["Semua Bendung"] + get_bendungs_list()
+            sel_b = st.selectbox("Pilih Bendung:", b_list, index=0, key="data_debit_sel_b")
+        with col_fy:
+            y_list = sorted(list(df_bendung["Tahun_Hidrologi"].unique()))
+            sel_years = st.multiselect("Pilih Tahun Hidrologi:", y_list, default=y_list, key="data_debit_sel_y")
+
+    # Apply Filter
+    view_df = df_bendung.copy()
+    if sel_b != "Semua Bendung":
+        view_df = view_df[view_df["Bendung"] == sel_b]
+    if sel_years:
+        view_df = view_df[view_df["Tahun_Hidrologi"].isin(sel_years)]
+
+    # Display Table
+    st.markdown(f"##### 📑 Tabel Data Debit 1/2 Bulanan ({sel_b} — {len(view_df)} Record)")
+    
+    display_df = view_df.copy()
+    fmt_dict = {col: "{:.1f}" for col in SEMI_MONTHLY_COLS}
+    
+    st.dataframe(
+        display_df.style.format(fmt_dict, na_rep="-"),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # Statistical Summary Box per Periode if single bendung
+    if sel_b != "Semua Bendung" and not view_df.empty:
+        with st.expander("📊 Lihat Statistik Ringkasan per Periode 1/2 Bulanan (Rata-rata, Min, Max)", expanded=True):
+            stat_rows = []
+            for col in SEMI_MONTHLY_COLS:
+                s = view_df[col].dropna()
+                stat_rows.append({
+                    "Periode": col,
+                    "Rata-rata (L/s)": round(s.mean(), 2) if len(s) > 0 else 0.0,
+                    "Min (L/s)": round(s.min(), 2) if len(s) > 0 else 0.0,
+                    "Max (L/s)": round(s.max(), 2) if len(s) > 0 else 0.0,
+                    "Jumlah Observasi (N)": len(s)
+                })
+            stat_df = pd.DataFrame(stat_rows)
+            st.dataframe(stat_df.style.format({
+                "Rata-rata (L/s)": "{:.2f}",
+                "Min (L/s)": "{:.2f}",
+                "Max (L/s)": "{:.2f}"
+            }), use_container_width=True, hide_index=True)
+
+    # Download Buttons
+    st.markdown("---")
+    st.markdown("##### 📥 Unduh Data Debit Bendung")
+    col_dl1, col_dl2 = st.columns([2, 2])
+    clean_name = sel_b.replace(" ", "_")
+    with col_dl1:
+        excel_buf = io.BytesIO()
+        with pd.ExcelWriter(excel_buf, engine="openpyxl") as writer:
+            view_df.to_excel(writer, index=False, sheet_name="Data Debit Bendung")
+        excel_buf.seek(0)
+        st.download_button(
+            label="📥 Download Data Debit (Excel .xlsx)",
+            data=excel_buf.getvalue(),
+            file_name=f"Data_Debit_{clean_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+    with col_dl2:
+        csv_bytes = view_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📄 Download Data Debit (CSV .csv)",
+            data=csv_bytes,
+            file_name=f"Data_Debit_{clean_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+
+
+def render_input_debit_manual():
+    """Merender tab Input Debit Manual untuk menambah atau mengupdate data debit bendung."""
+    df_bendung = load_bendung_dataset()
+    if df_bendung.empty:
+        st.error("Data debit bendung tidak ditemukan.")
+        return
+
+    with st.container(border=True):
+        st.subheader("✍️ Input & Pembaruan Data Debit Bendung Manual")
+        st.caption(
+            "Tambahkan data observasi debit tahun hidrologi baru atau perbarui nilai debit 1/2 bulanan "
+            "untuk bendung di Kabupaten Tegal. Seluruh perubahan langsung tersimpan permanen ke database sistem."
+        )
+
+    tab_form, tab_grid = st.tabs([
+        "📝 Formulir Input / Edit 1 Tahun Penuh",
+        "📊 Editor Tabel Langsung (Spreadsheet Grid)"
+    ])
+
+    with tab_form:
+        col_in_b, col_in_y = st.columns(2)
+        with col_in_b:
+            bendungs = get_bendungs_list()
+            sel_b_in = st.selectbox("Pilih Bendung:", bendungs, key="in_bendung_choice")
+        with col_in_y:
+            existing_years = sorted(list(df_bendung.loc[df_bendung["Bendung"] == sel_b_in, "Tahun_Hidrologi"].unique()), reverse=True)
+            y_mode = st.radio("Pilihan Tahun:", ["Pilih Tahun Yang Sudah Ada (Edit)", "Tambah Tahun Hidrologi Baru"], horizontal=True, key="in_yr_mode")
+            if y_mode == "Pilih Tahun Yang Sudah Ada (Edit)":
+                sel_y_in = st.selectbox("Pilih Tahun Hidrologi:", existing_years, key="in_sel_existing_yr")
+            else:
+                sel_y_in = st.text_input("Ketik Tahun Hidrologi Baru (Format: TTTT/TTTT, contoh: 2025/2026):", value="2025/2026", key="in_new_yr")
+
+        # Load existing row if available
+        existing_row = df_bendung[(df_bendung["Bendung"] == sel_b_in) & (df_bendung["Tahun_Hidrologi"] == sel_y_in)]
+        current_vals = {}
+        if not existing_row.empty:
+            for col in SEMI_MONTHLY_COLS:
+                val = existing_row[col].iloc[0]
+                current_vals[col] = float(val) if pd.notna(val) else 0.0
+
+        st.markdown(f"##### 💧 Nilai Debit 1/2 Bulanan — {sel_b_in} (Tahun: {sel_y_in})")
+        st.caption("Masukkan nilai debit dalam satuan **Liter/detik (L/s)** untuk setiap periode 1/2 bulanan:")
+
+        form_values = {}
+        seasons = [
+            ("Musim Hujan Bagian 1 (Oktober - Desember)", ["OKTOBER", "NOVEMBER", "DESEMBER"]),
+            ("Musim Hujan Bagian 2 (Januari - Maret)", ["JANUARI", "FEBRUARI", "MARET"]),
+            ("Musim Kemarau Bagian 1 (April - Juni)", ["APRIL", "MEI", "JUNI"]),
+            ("Musim Kemarau Bagian 2 (Juli - September)", ["JULI", "AGUSTUS", "SEPTEMBER"])
+        ]
+
+        with st.form(key=f"debit_input_form_{sel_b_in}_{sel_y_in}"):
+            for season_title, season_months in seasons:
+                st.markdown(f"**{season_title}**")
+                cols_season = st.columns(3)
+                for m_idx, m_name in enumerate(season_months):
+                    with cols_season[m_idx]:
+                        st.markdown(f"**Bulan {m_name.capitalize()}**")
+                        c1 = f"{m_name} I"
+                        c2 = f"{m_name} II"
+                        val1 = current_vals.get(c1, 0.0)
+                        val2 = current_vals.get(c2, 0.0)
+                        form_values[c1] = st.number_input(
+                            f"{m_name} I (L/s)",
+                            min_value=0.0,
+                            max_value=100000.0,
+                            value=float(val1),
+                            step=1.0,
+                            format="%.2f",
+                            key=f"input_{sel_b_in}_{sel_y_in}_{c1}"
+                        )
+                        form_values[c2] = st.number_input(
+                            f"{m_name} II (L/s)",
+                            min_value=0.0,
+                            max_value=100000.0,
+                            value=float(val2),
+                            step=1.0,
+                            format="%.2f",
+                            key=f"input_{sel_b_in}_{sel_y_in}_{c2}"
+                        )
+                st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
+
+            btn_submit = st.form_submit_button("💾 Simpan Data Debit Bendung", type="primary", use_container_width=True)
+
+            if btn_submit:
+                if not sel_y_in or "/" not in sel_y_in:
+                    st.error("Format tahun hidrologi harus berupa 'TTTT/TTTT' (contoh: 2025/2026).")
+                else:
+                    ok, msg = add_or_update_bendung_record(sel_b_in, sel_y_in, form_values)
+                    if ok:
+                        st.success(f"✅ {msg}")
+                        st.balloons()
+                    else:
+                        st.error(f"❌ Gagal menyimpan: {msg}")
+
+    with tab_grid:
+        st.markdown(f"##### 📊 Spreadsheet Editor Data Debit — {sel_b_in}")
+        st.caption("Edit nilai debit secara langsung di dalam grid tabel di bawah ini. Klik **Simpan Perubahan Tabel** setelah selesai.")
+        
+        df_grid = df_bendung[df_bendung["Bendung"] == sel_b_in].copy().reset_index(drop=True)
+        edited_df = st.data_editor(
+            df_grid,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="dynamic",
+            key=f"data_editor_debit_{sel_b_in}"
+        )
+        if st.button("💾 Simpan Perubahan Tabel Langsung", key=f"btn_save_grid_{sel_b_in}"):
+            full_df = load_bendung_dataset()
+            full_df = full_df[full_df["Bendung"] != sel_b_in]
+            full_df = pd.concat([full_df, edited_df], ignore_index=True)
+            save_bendung_dataset(full_df)
+            log_debit_manual_entry(sel_b_in, "SEMUA", "BULK_UPDATE", f"{len(edited_df)} baris diperbarui via grid")
+            st.success(f"✅ Seluruh data debit {sel_b_in} berhasil disimpan!")
+            st.rerun()
+
+    # Audit Trail
+    with st.expander("🕒 Riwayat Audit Log Penginputan Manual Debit Bendung", expanded=False):
+        log_df = get_debit_manual_log()
+        if not log_df.empty:
+            st.dataframe(log_df, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Belum ada riwayat pencatatan manual.")
+
+
 def render_tab_weibull_content():
     """Merender seluruh antarmuka Tab Debit Andalan Bendung (Metode Weibull Q80)."""
     df_bendung = load_bendung_dataset()
