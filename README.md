@@ -57,6 +57,17 @@ Telah disiapkan file peluncur praktis langsung di **Desktop** Anda:
   - Ranking stasiun terbasah.
 - 📊 **Tab 4: Ringkasan Statistik Per Stasiun**:
   - Tabel statistik komprehensif (Total, Rata-rata, Nilai Maksimum, Hari Hujan, Hari Kering, Sensor Rusak).
+- 💧 **Tab 4: Analisis Debit Andalan 4 Bendung Kabupaten Tegal (Metode Weibull Q80)**:
+  - **4 Bendung**: Bendung Rajabawah (D.I. Rajabawah), Bendung Pondoh (D.I. Pondoh), Bendung Kemaron (D.I. Gung, Kemaron), dan Bendung Lengkong (D.I. Lengkong).
+  - **Format Data**: Tersusun dalam 24 periode 1/2 bulanan (Oktober I s/d September II) dalam satuan **Liter/detik (L/s)** dengan deret historis 2004/2005 - 2024/2025.
+  - **Debit Andalan Weibull**: Menghitung ketersediaan debit andalan menggunakan rumus probabilitas terlampaui Weibull: $P = \frac{m}{N + 1} \times 100\%$ khusus keandalan rancang irigasi $80\%$ ($Q_{80}$ / $R_{80}$) serta opsi $50\%$ (Normal), $90\%$ (Kering), dan $95\%$ (Ekstrem).
+  - **Rekap Bulanan**: Menyajikan rekapitulasi per bulan lengkap (Debit Periode I, Periode II, Rata-rata 1/2 Bulanan, dan Debit Bulanan dalam satuan Liter/detik).
+  - **Grafik Interaktif Plotly**:
+    - Hidrograf Debit Andalan 1/2 Bulanan dengan kurva Max-Min dan Rata-rata.
+    - Diagram Batang Rekapitulasi Debit Bulanan.
+    - Hidrograf Komparasi 4 Bendung Sekaligus.
+    - Kurva Durasi Debit (Flow Duration Curve).
+  - **Ekspor Excel Khusus**: Unduh laporan analisis debit andalan bendung format resmi (.xlsx).
 - 🌊 **Tab 5: Analisis Frekuensi & Curah Hujan Rancangan (Kala Ulang)**:
   - Perhitungan parameter statistik hidrologi: $\bar{X}$, $S$, $C_v$, $C_s$, $C_k$.
   - Perhitungan Curah Hujan Rancangan Kala Ulang $T = 2, 5, 10, 25, 50, 100$ Tahun menggunakan metode **Gumbel** dan **Log Pearson Tipe III** (Standar SNI Perencanaan Bangunan Air/Drainase).
