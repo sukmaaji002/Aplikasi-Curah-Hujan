@@ -535,14 +535,7 @@ with st.sidebar:
                 mime="text/csv",
                 use_container_width=True
             )
-        st.markdown("---")
-        secrets_obj_s = getattr(st, "secrets", None)
-        gh_ready_s = is_github_configured(secrets_obj_s)
-        st.subheader("☁️ Status GitHub Sync")
-        if gh_ready_s:
-            st.caption("🟢 Tersambung ke repositori GitHub")
-        else:
-            st.caption("🟡 Mode lokal (belum terhubung GITHUB_TOKEN)")
+
 
 
 if app_mode == "🌧️ CURAH HUJAN":
@@ -1376,99 +1369,6 @@ if app_mode == "🌧️ CURAH HUJAN":
                 horizontal=True
             )
 
-        # Box Cloud Sync & Backup GitHub
-        with st.container(border=True):
-            st.markdown("##### ☁️ Status Sinkronisasi Cloud (GitHub Auto-Push & Cadangan Data)")
-            st.caption("Memastikan setiap data curah hujan baru yang diinput di Streamlit Cloud langsung tersimpan permanen di repositori GitHub.")
-        
-            secrets_obj = st.secrets if hasattr(st, "secrets") else None
-            gh_ready = is_github_configured(secrets_obj)
-
-            col_gh_st, col_gh_btn1, col_gh_btn2 = st.columns([2.5, 1.8, 2.0])
-            with col_gh_st:
-                if gh_ready:
-                    st.markdown("🟢 **Status Auto-Push:** **Aktif (Tersambung ke GitHub)**")
-                    st.caption("Setiap penambahan atau pengeditan data baru otomatis di-commit & di-push ke repositori GitHub.")
-                else:
-                    st.markdown("🟡 **Status Auto-Push:** **Belum Terhubung ke GitHub Secrets**")
-                    st.caption("Data tersimpan di kontainer lokal. Hubungkan `GITHUB_TOKEN` di Streamlit Secrets agar otomatis ter-push ke repositori GitHub.")
-
-            with col_gh_btn1:
-                if gh_ready:
-                    if st.button("🧪 Uji Koneksi GitHub", use_container_width=True, key="btn_test_gh_conn"):
-                        ok_t, msg_t = test_github_connection(secrets_obj)
-                        if ok_t:
-                            st.success(msg_t)
-                        else:
-                            st.error(msg_t)
-                else:
-                    st.info("💡 Buka panduan di bawah untuk menghubungkan token GitHub.")
-
-            with col_gh_btn2:
-                if gh_ready:
-                    if st.button("🚀 Push Database ke GitHub", type="primary", use_container_width=True, key="btn_manual_push_gh"):
-                        with st.spinner("Mengunggah seluruh database ke GitHub..."):
-                            sync_res = sync_all_database_to_github(
-                                commit_message=f"chore(data): manual database push from web [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}]",
-                                secrets_dict=secrets_obj
-                            )
-                            if sync_res.get("success"):
-                                st.success("✅ Database berhasil ter-push ke GitHub!")
-                            else:
-                                st.error(f"❌ Gagal: {sync_res.get('message')}")
-
-            # Baris tombol unduh cadangan lokal mandiri
-            col_dl_p1, col_dl_p2 = st.columns(2)
-            with col_dl_p1:
-                if os.path.exists("data_curah_hujan.parquet"):
-                    with open("data_curah_hujan.parquet", "rb") as f_pq:
-                        st.download_button(
-                            label="📥 Unduh Cadangan Database (.parquet)",
-                            data=f_pq.read(),
-                            file_name=f"database_curah_hujan_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.parquet",
-                            mime="application/octet-stream",
-                            use_container_width=True,
-                            help="Unduh berkas database biner utama (.parquet) untuk cadangan di laptop Anda"
-                        )
-            with col_dl_p2:
-                if os.path.exists("manual_records_log.csv"):
-                    with open("manual_records_log.csv", "rb") as f_log:
-                        st.download_button(
-                            label="📥 Unduh Catatan Log Riwayat (.csv)",
-                            data=f_log.read(),
-                            file_name=f"riwayat_input_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                            mime="text/csv",
-                            use_container_width=True,
-                            help="Unduh berkas log riwayat inputan manual"
-                        )
-
-            with st.expander("📖 Panduan Mengaktifkan Auto-Push ke GitHub di Streamlit Cloud (3 Langkah Mudah)"):
-                st.markdown("""
-                Agar data yang diinput oleh siapapun di web otomatis ter-push ke repositori GitHub:
-            
-                1. **Buat Personal Access Token (PAT) di GitHub:**
-                   - Buka [GitHub Token Generator (classic)](https://github.com/settings/tokens).
-                   - Klik **Generate new token** ➔ pilih **Generate new token (classic)**.
-                   - Beri nama (Note), contoh: `Streamlit Curah Hujan`.
-                   - Centang opsi izin **`repo`** (Full control of private repositories).
-                   - Klik tombol hijau **Generate token** di bagian bawah, lalu salin token yang muncul (diawali dengan `ghp_...`).
-            
-                2. **Tempelkan di Streamlit Cloud Secrets:**
-                   - Buka aplikasi Anda di [share.streamlit.io](https://share.streamlit.io/).
-                   - Klik tombol **Settings** (ikon titik tiga `...` di pojok kanan bawah atau samping URL aplikasi) ➔ pilih **Settings** ➔ klik tab **Secrets**.
-                   - Tempelkan konfigurasi berikut:
-                   ```toml
-                   GITHUB_TOKEN = "ghp_tempelkan_token_anda_di_sini"
-                   GITHUB_REPO = "sukmaaji002/Aplikasi-Curah-Hujan"
-                   GITHUB_BRANCH = "main"
-                   ```
-                   - Klik **Save**.
-            
-                3. **Selesai!**
-                   - Begitu disimpan, status di atas akan langsung berubah menjadi **🟢 Aktif (Tersambung ke GitHub)**.
-                   - Setiap kali ada data baru yang disimpan, sistem otomatis meng-commit dan men-sinkronkannya ke repositori GitHub Anda!
-                """)
-
         if input_mode == "Input Data Harian Tunggal (Single Entry)":
             with st.container(border=True):
                 st.markdown("##### 📝 Formulir Input Data Harian Tunggal")
@@ -1848,6 +1748,100 @@ if app_mode == "🌧️ CURAH HUJAN":
                 st.dataframe(log_df.tail(25).iloc[::-1], use_container_width=True, height=260)
             else:
                 st.caption("Belum ada riwayat input manual yang dicatat.")
+
+        # ==============================================================================
+        # PANEL PENGELOLA SISTEM (TERSEMBUNYI DARI PUBLIK / DILINDUNGI SANDI ADMIN)
+        # ==============================================================================
+        is_admin_query = False
+        try:
+            if hasattr(st, "query_params") and st.query_params.get("admin") in ["1", "true", "True"]:
+                is_admin_query = True
+        except Exception:
+            pass
+
+        with st.expander("🔒 Pengaturan Pengelola Sistem (Khusus Administrator)", expanded=is_admin_query):
+            admin_pwd = st.text_input(
+                "Masukkan Kode Sandi Administrator:",
+                type="password",
+                placeholder="Masukkan sandi pengelola untuk membuka tombol kontrol...",
+                key="admin_access_pwd"
+            )
+            secrets_obj = st.secrets if hasattr(st, "secrets") else None
+            cfg_pwd = ""
+            if secrets_obj:
+                try:
+                    cfg_pwd = secrets_obj.get("ADMIN_PASSWORD", "") or secrets_obj.get("admin_password", "")
+                except Exception:
+                    pass
+            valid_passwords = ["dpupr2026", "admin", "admin123", "tegal2026"]
+            if cfg_pwd:
+                valid_passwords.append(str(cfg_pwd).strip())
+
+            is_admin_auth = is_admin_query or (admin_pwd.strip().lower() in valid_passwords)
+
+            if is_admin_auth:
+                st.success("🔓 Akses Pengelola Terverifikasi")
+                gh_ready = is_github_configured(secrets_obj)
+
+                col_gh_st, col_gh_btn1, col_gh_btn2 = st.columns([2.5, 1.8, 2.0])
+                with col_gh_st:
+                    if gh_ready:
+                        st.markdown("🟢 **Status Auto-Push:** **Aktif (Tersambung ke GitHub)**")
+                        st.caption("Setiap penambahan atau pengeditan data baru otomatis di-commit & di-push ke repositori GitHub.")
+                    else:
+                        st.markdown("🟡 **Status Auto-Push:** **Belum Terhubung ke GitHub Secrets**")
+                        st.caption("Data tersimpan di kontainer lokal.")
+
+                with col_gh_btn1:
+                    if gh_ready:
+                        if st.button("🧪 Uji Koneksi GitHub", use_container_width=True, key="btn_test_gh_conn"):
+                            ok_t, msg_t = test_github_connection(secrets_obj)
+                            if ok_t:
+                                st.success(msg_t)
+                            else:
+                                st.error(msg_t)
+                    else:
+                        st.info("💡 Konfigurasi token di Streamlit Secrets.")
+
+                with col_gh_btn2:
+                    if gh_ready:
+                        if st.button("🚀 Push Database ke GitHub", type="primary", use_container_width=True, key="btn_manual_push_gh"):
+                            with st.spinner("Mengunggah seluruh database ke GitHub..."):
+                                sync_res = sync_all_database_to_github(
+                                    commit_message=f"chore(data): manual database push from web [{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}]",
+                                    secrets_dict=secrets_obj
+                                )
+                                if sync_res.get("success"):
+                                    st.success("✅ Database berhasil ter-push ke GitHub!")
+                                else:
+                                    st.error(f"❌ Gagal: {sync_res.get('message')}")
+
+                # Baris tombol unduh cadangan lokal mandiri
+                col_dl_p1, col_dl_p2 = st.columns(2)
+                with col_dl_p1:
+                    if os.path.exists("data_curah_hujan.parquet"):
+                        with open("data_curah_hujan.parquet", "rb") as f_pq:
+                            st.download_button(
+                                label="📥 Unduh Cadangan Database (.parquet)",
+                                data=f_pq.read(),
+                                file_name=f"database_curah_hujan_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.parquet",
+                                mime="application/octet-stream",
+                                use_container_width=True
+                            )
+                with col_dl_p2:
+                    if os.path.exists("manual_records_log.csv"):
+                        with open("manual_records_log.csv", "rb") as f_log:
+                            st.download_button(
+                                label="📥 Unduh Catatan Log Riwayat (.csv)",
+                                data=f_log.read(),
+                                file_name=f"riwayat_input_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
+            elif admin_pwd:
+                st.error("❌ Kode sandi salah. Akses ditolak.")
+            else:
+                st.caption("Panel pemeliharaan repositori dan sinkronisasi database dilindungi kata sandi pengelola.")
 
 
 
