@@ -9,6 +9,7 @@ import io
 import sys
 import importlib
 import re
+from html import escape
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -77,185 +78,227 @@ from hydrology_analysis import (
 
 # Set page config
 st.set_page_config(
-    page_title="Sistem Filter & Analisis Data Curah Hujan",
+    page_title="Data Hidrologi · DPUPR Kabupaten Tegal",
     page_icon="🌧️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS styling (Modern PUPR Theme)
 st.markdown("""
 <style>
-    /* Global container styling */
-    .block-container {
-        padding-top: 1.5rem;
-        padding-bottom: 2rem;
+    :root {
+        --hydro-ink: #142c46;
+        --hydro-muted: #465d72;
+        --hydro-line: #d7e2eb;
+        --hydro-tint: #f4f8fb;
+        --hydro-accent: #176b87;
     }
-    /* PUPR Header Branding Banner */
-    .pupr-header-card {
-        background: linear-gradient(135deg, #0B192C 0%, #1E3E62 45%, #001F3F 100%);
-        border-radius: 16px;
-        padding: 20px 26px;
-        margin-bottom: 20px;
-        border-left: 6px solid #0284C7;
-        border-bottom: 3.5px solid #F59E0B;
-        box-shadow: 0 10px 25px -5px rgba(11, 25, 44, 0.25);
-        color: #FFFFFF;
+
+    .stMain .block-container {
+        max-width: 88rem;
+        container-type: inline-size;
+        padding: 3.6rem clamp(1rem, 3.5vw, 2.5rem) 3rem;
+    }
+
+    .hydro-header {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 20px;
-        flex-wrap: wrap;
+        gap: 1.5rem;
+        padding: clamp(1.25rem, 2.7vw, 2.15rem);
+        border: 1px solid #233f58;
+        border-radius: 1rem;
+        background: linear-gradient(115deg, #142c46 24%, #194b62 100%);
+        color: #fff;
     }
-    .pupr-header-content {
-        display: flex;
-        align-items: center;
-        gap: 20px;
-        flex: 1;
-        min-width: 320px;
+
+    .hydro-brand {
+        margin: 0 0 .45rem;
+        color: #bbe2e9;
+        font-size: .875rem;
+        font-weight: 650;
     }
-    .pupr-header-logo {
-        height: 64px;
-        max-width: 170px;
+
+    .hydro-header h1 {
+        margin: 0;
+        padding: 0;
+        color: #fff;
+        font-size: clamp(2rem, 4.4vw, 3.25rem);
+        font-weight: 720;
+        line-height: 1.1;
+        letter-spacing: -.04em;
+    }
+
+    .hydro-header .hydro-description {
+        margin: .75rem 0 0;
+        color: #e0eef2;
+        font-size: 1rem;
+        line-height: 1.45;
+    }
+
+    .hydro-header-logo {
+        flex: 0 0 auto;
+        max-width: 6.5rem;
+        max-height: 3.6rem;
+        width: auto;
+        height: auto;
         object-fit: contain;
-        filter: drop-shadow(0 2px 8px rgba(0,0,0,0.35));
     }
-    .pupr-tagline {
-        font-size: 0.82rem;
-        font-weight: 700;
-        color: #FDE047;
-        letter-spacing: 1.2px;
-        text-transform: uppercase;
-    }
-    .pupr-title {
-        font-size: 1.25rem;
-        font-weight: 800;
-        color: #FFFFFF;
-        letter-spacing: 0.5px;
-        line-height: 1.25;
-        margin: 2px 0;
-        text-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    .pupr-subtitle {
-        font-size: 0.8rem;
-        color: #CBD5E1;
-        font-weight: 400;
+
+    .hydro-sidebar-brand {
+        color: var(--hydro-ink);
+        font-size: 1.125rem;
+        font-weight: 750;
         line-height: 1.3;
     }
-    .pupr-header-badges {
+
+    .hydro-sidebar-agency {
+        display: block;
+        margin-top: .2rem;
+        color: var(--hydro-muted);
+        font-size: .875rem;
+        font-weight: 500;
+    }
+
+    [data-testid="stSidebar"] hr {
+        margin-block: .65rem;
+    }
+
+    .hydro-context {
         display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 6px;
-    }
-    .pupr-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 9999px;
-        font-size: 0.75rem;
-        font-weight: 700;
-        letter-spacing: 0.3px;
-    }
-    .pupr-badge-primary {
-        background-color: rgba(2, 132, 199, 0.35);
-        color: #38BDF8;
-        border: 1px solid rgba(56, 189, 248, 0.4);
-    }
-    .pupr-badge-gold {
-        background-color: rgba(245, 158, 11, 0.25);
-        color: #FDE047;
-        border: 1px solid rgba(245, 158, 11, 0.5);
-    }
-    /* Box card container */
-    .custom-card {
-        background-color: #FFFFFF;
-        border: 1.5px solid #E2E8F0;
-        border-radius: 12px;
-        padding: 18px 22px;
-        margin-bottom: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    }
-    .custom-card-title {
-        font-size: 1.1rem;
-        font-weight: 700;
-        color: #1E3A8A;
-        margin-bottom: 10px;
-        display: flex;
+        flex-wrap: wrap;
+        gap: .35rem .75rem;
         align-items: center;
-        gap: 8px;
+        margin: .6rem 0 .45rem;
+        padding: 0;
+        list-style: none;
     }
-    /* Metric Card Styling */
-    div[data-testid="stMetric"] {
-        background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
-        border: 1px solid #E2E8F0;
-        border-top: 3.5px solid #0284C7;
-        padding: 12px 16px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+
+    .hydro-context li {
+        margin: 0;
+        padding: .2rem .55rem;
+        border: 1px solid var(--hydro-line);
+        border-radius: .375rem;
+        background: var(--hydro-tint);
+        color: var(--hydro-muted);
+        font-size: .875rem;
+        font-weight: 550;
     }
-    div[data-testid="stMetric"]:hover {
-        border-top-color: #F59E0B;
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
+
+    .stMain [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(6):last-child [data-testid="stMetric"]) {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: .65rem;
     }
-    div[data-testid="stMetricLabel"] {
-        font-size: 0.85rem;
+
+    .stMain [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(6):last-child [data-testid="stMetric"]) > [data-testid="stColumn"] {
+        width: 100% !important;
+        min-width: 0;
+    }
+
+    .stApp [data-testid="stMetric"] {
+        min-width: 0;
+        height: 100%;
+        padding: .8rem .9rem;
+        border: 1px solid var(--hydro-line);
+        border-radius: .75rem;
+        background: var(--hydro-tint);
+    }
+
+    .stApp [data-testid="stMetricLabel"] p {
+        color: var(--hydro-muted);
+        font-size: .875rem;
         font-weight: 600;
-        color: #475569;
     }
-    div[data-testid="stMetricValue"] {
-        font-size: 1.5rem;
+
+    .stApp [data-testid="stMetricValue"] {
+        color: var(--hydro-ink);
+        font-size: clamp(1.15rem, 1.5vw, 1.6rem);
         font-weight: 700;
-        color: #1E3A8A;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -.025em;
     }
-    /* Button primary */
-    .stDownloadButton > button {
-        width: 100%;
-        border-radius: 8px;
+
+    .stTabs [role="tablist"] {
+        gap: .3rem;
+        padding-inline: .2rem;
+    }
+
+    .stTabs [role="tab"] {
+        height: 2.75rem;
+        padding-inline: .8rem;
+        border-radius: .5rem .5rem 0 0;
+        white-space: nowrap;
+    }
+
+    .stTabs [role="tab"] p {
+        font-size: .9375rem;
         font-weight: 600;
-        padding: 0.5rem 1rem;
-        transition: all 0.2s ease-in-out;
     }
-    /* Tab headers with solid card boundaries */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        border-bottom: 2px solid #E2E8F0;
-        padding-bottom: 4px;
-        overflow-x: auto;
+
+    .stTabs [role="tab"][aria-selected="true"] {
+        background: var(--hydro-tint);
+        color: var(--hydro-accent);
     }
-    .stTabs [data-baseweb="tab"] {
-        height: 44px;
-        border-radius: 10px 10px 0 0;
-        padding: 0 18px;
-        font-weight: 600;
-        font-size: 0.92rem;
-        background-color: #F1F5F9;
-        color: #475569;
-        border: 1px solid #E2E8F0;
-        border-bottom: none;
-        transition: all 0.2s ease-in-out;
+
+    .stTabs [role="tab"]:focus-visible {
+        outline: 2px solid var(--hydro-accent);
+        outline-offset: -2px;
     }
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #1E3A8A 0%, #0284C7 100%) !important;
-        color: #FFFFFF !important;
-        border-color: #1E3A8A !important;
-        box-shadow: 0 4px 6px -1px rgba(2, 132, 199, 0.25);
+
+    @container (max-width: 55rem) {
+        .stMain [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(6):last-child [data-testid="stMetric"]) {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
     }
-    /* Section badge */
-    .filter-badge {
-        display: inline-block;
-        background-color: #E0E7FF;
-        color: #3730A3;
-        padding: 4px 10px;
-        border-radius: 9999px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        margin-right: 6px;
-        margin-bottom: 6px;
+
+    @container (max-width: 29rem) {
+        .stMain [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]:nth-child(6):last-child [data-testid="stMetric"]) {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 560px) {
+        .hydro-header {
+            align-items: flex-start;
+            gap: .5rem;
+        }
+
+        .hydro-header-logo {
+            max-width: 3.25rem;
+            max-height: 2.75rem;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+def render_dashboard_header(title: str, description: str, context: tuple[str, ...]):
+    logo = get_base64_image("assets/logo_pupr_tegal.png")
+    logo_image = (
+        f'<img class="hydro-header-logo" src="data:image/png;base64,{logo}" '
+        'alt="Logo DPUPR Kabupaten Tegal">'
+        if logo else ""
+    )
+    context_items = "".join(f"<li>{escape(item)}</li>" for item in context)
+    st.markdown(
+        f"""
+        <header class="hydro-header">
+            <div>
+                <p class="hydro-brand">DPUPR Kabupaten Tegal</p>
+                <h1>{escape(title)}</h1>
+                <p class="hydro-description">{escape(description)}</p>
+            </div>
+            {logo_image}
+        </header>
+        """,
+        unsafe_allow_html=True
+    )
+    st.markdown(f'<ul class="hydro-context">{context_items}</ul>', unsafe_allow_html=True)
+
 
 DEFAULT_PARQUET = "data_curah_hujan.parquet"
 DEFAULT_EXCEL = "data_curah_hujan_default.xlsx"
@@ -300,68 +343,45 @@ def load_data(source_type="default", uploaded_file=None, raw_text="", _mtime=0):
 # SIDEBAR: SUMBER DATA & FILTER
 # ==============================================================================
 with st.sidebar:
-    # Sidebar Header Branding DPUPR Kab. Tegal
-    logo_sidebar_b64 = get_base64_image("assets/logo_pupr_tegal.png")
-    if logo_sidebar_b64:
-        st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #0B192C 0%, #1E3E62 100%); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; border-bottom: 3px solid #F59E0B; text-align: center;">
-            <img src="data:image/png;base64,{logo_sidebar_b64}" style="height: 48px; max-width: 140px; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4)); margin-bottom: 6px;" />
-            <div style="font-size: 0.78rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.5px; line-height: 1.2;">DINAS PEKERJAAN UMUM DAN PENATAAN RUANG</div>
-            <div style="font-size: 0.85rem; font-weight: 800; color: #FDE047; letter-spacing: 0.8px;">KABUPATEN TEGAL</div>
-            <div style="font-size: 0.70rem; color: #BAE6FD; margin-top: 3px;">Bidang Sumber Daya Air dan Jasa Konstruksi</div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.image("https://img.icons8.com/fluency/96/rain.png", width=64)
-        st.title("🌧️ DPUPR KAB. TEGAL")
-        st.caption("Aplikasi Analisis & Ekspor Data Hidrologi")
-    st.markdown("---")
-
-    # ==========================================================================
-    # PILIHAN KELOMPOK DATA UTAMA DI SIDEBAR
-    # ==========================================================================
-    st.markdown("### 🗂️ Kategori Data")
+    st.markdown(
+        '<div class="hydro-sidebar-brand">Data Hidrologi'
+        '<span class="hydro-sidebar-agency">Bidang Sumber Daya Air dan Jasa Konstruksi</span></div>',
+        unsafe_allow_html=True
+    )
     app_mode = st.radio(
-        "Pilih Kategori:",
-        [
-            "🌧️ CURAH HUJAN",
-            "💧 DATA DEBIT"
-        ],
-        index=0,
+        "Modul",
+        ["Curah Hujan", "Debit Bendung"],
+        horizontal=True,
         key="app_main_mode"
     )
-    st.markdown("---")
+    st.divider()
 
-    if app_mode == "🌧️ CURAH HUJAN":
-        # 1. SUMBER DATA
-        st.subheader("📂 1. Sumber Data")
-        data_source_opt = st.radio(
-            "Pilih Data:",
+    if app_mode == "Curah Hujan":
+        data_source_opt = st.selectbox(
+            "Sumber data",
             [
-                "Data Tersimpan (2015 - 2026)",
-                "Unggah File Excel (.xlsx, .xls)",
-                "Unggah File CSV (.csv)",
-                "Tempel Teks CSV Langsung"
-            ],
-            index=0,
-            label_visibility="collapsed"
+                "Data tersimpan",
+                "Unggah Excel",
+                "Unggah CSV",
+                "Tempel teks CSV"
+            ]
         )
 
         uploaded_file = None
         raw_pasted_text = ""
         source_key = "default"
 
-        if data_source_opt == "Unggah File Excel (.xlsx, .xls)":
+        if data_source_opt == "Unggah Excel":
             source_key = "excel"
             uploaded_file = st.file_uploader("Pilih file Excel (.xlsx, .xls)", type=["xlsx", "xls"])
             if uploaded_file is None:
                 st.info("Silakan unggah file Excel data curah hujan.")
-        elif data_source_opt == "Unggah File CSV (.csv)":
+        elif data_source_opt == "Unggah CSV":
             source_key = "csv_file"
             uploaded_file = st.file_uploader("Pilih file CSV (.csv)", type=["csv", "txt"])
             if uploaded_file is None:
                 st.info("Silakan unggah file CSV data curah hujan.")
-        elif data_source_opt == "Tempel Teks CSV Langsung":
+        elif data_source_opt == "Tempel teks CSV":
             source_key = "csv_text"
             raw_pasted_text = st.text_area(
                 "Tempelkan baris data CSV di sini:",
@@ -383,15 +403,12 @@ with st.sidebar:
             st.error("Data curah hujan belum tersedia atau format tidak sesuai.")
             st.stop()
 
-        col_sb_st1, col_sb_st2 = st.columns([1.8, 1.2])
-        with col_sb_st1:
-            st.success(f"✅ {len(df_raw):,} data ({len(df_raw['Stasiun'].unique())} stasiun)")
-        with col_sb_st2:
-            if st.button("🔄 Segarkan", use_container_width=True, help="Bersihkan cache memori dan baca ulang data terbaru dari file"):
-                st.cache_data.clear()
-                st.rerun()
+        st.caption(f"{len(df_raw):,} baris · {df_raw['Stasiun'].nunique()} stasiun")
+        if st.button("Segarkan data", help="Baca ulang data terbaru dari file"):
+            st.cache_data.clear()
+            st.rerun()
 
-        st.markdown("---")
+        st.divider()
 
         # Ambil range data
         min_date = df_raw["Tanggal"].min().date()
@@ -401,15 +418,15 @@ with st.sidebar:
         all_categories = sorted(list(df_raw["Kategori_BMKG"].dropna().unique()))
 
         # 2. FILTER WAKTU
-        st.subheader("📅 2. Filter Waktu")
-        time_filter_mode = st.radio("Metode Filter Waktu:", ["Rentang Tanggal Bebas", "Pilih Tahun & Bulan", "Musim (Kemarau / Hujan)"])
+        st.subheader("Waktu")
+        time_filter_mode = st.selectbox("Metode filter", ["Rentang tanggal", "Tahun dan bulan", "Musim"])
 
-        if time_filter_mode == "Rentang Tanggal Bebas":
+        if time_filter_mode == "Rentang tanggal":
             col_d1, col_d2 = st.columns(2)
             with col_d1:
-                start_date = st.date_input("Mulai Dari:", value=datetime.date(2020, 1, 1), min_value=min_date, max_value=max_date)
+                start_date = st.date_input("Mulai", value=datetime.date(2020, 1, 1), min_value=min_date, max_value=max_date)
             with col_d2:
-                end_date = st.date_input("Sampai Dengan:", value=datetime.date(2020, 12, 31), min_value=min_date, max_value=max_date)
+                end_date = st.date_input("Sampai", value=datetime.date(2020, 12, 31), min_value=min_date, max_value=max_date)
         
             if start_date > end_date:
                 st.error("Tanggal awal tidak boleh melebihi tanggal akhir!")
@@ -419,14 +436,12 @@ with st.sidebar:
             selected_months = None
             selected_season = None
 
-        elif time_filter_mode == "Pilih Tahun & Bulan":
+        elif time_filter_mode == "Tahun dan bulan":
             start_date, end_date = None, None
             selected_season = None
         
             # Pilihan Tahun
-            col_y1, col_y2 = st.columns([3, 1])
-            with col_y1:
-                all_y_check = st.checkbox("Pilih Semua Tahun", value=False)
+            all_y_check = st.checkbox("Pilih Semua Tahun", value=False)
             default_y = all_years if all_y_check else [2020]
             selected_years = st.multiselect("Pilih Tahun:", all_years, default=default_y)
             if not selected_years:
@@ -459,10 +474,10 @@ with st.sidebar:
             )
             selected_months = [10, 11, 12, 1, 2, 3, 4] if "Hujan" in selected_season else [5, 6, 7, 8, 9]
 
-        st.markdown("---")
+        st.divider()
 
         # 3. FILTER STASIUN
-        st.subheader("📍 3. Filter Stasiun")
+        st.subheader("Stasiun")
         col_stn_btn1, col_stn_btn2 = st.columns(2)
         select_all_stn = col_stn_btn1.button("Pilih Semua", use_container_width=True)
         clear_stn = col_stn_btn2.button("Reset Pilihan", use_container_width=True)
@@ -476,7 +491,7 @@ with st.sidebar:
             st.session_state["selected_stations_state"] = [all_stations[0]]
 
         selected_stations = st.multiselect(
-            "Pilih Stasiun Pengamatan:",
+            "Stasiun pengamatan",
             options=all_stations,
             default=st.session_state["selected_stations_state"]
         )
@@ -484,14 +499,14 @@ with st.sidebar:
             st.warning("Pilih minimal satu stasiun!")
             st.stop()
 
-        st.markdown("---")
+        st.divider()
 
         # 4. FILTER CURAH HUJAN & INTENSITAS
-        st.subheader("🌧️ 4. Filter Intensitas Hujan")
+        st.subheader("Intensitas hujan")
         only_rain_days = st.checkbox("Hanya Hari Hujan (> 0 mm)", value=False)
         include_damaged = st.checkbox("Sertakan Data Sensor Rusak", value=True)
     
-        with st.expander("Filter Kategori BMKG & Nilai Khusus"):
+        with st.expander("Kategori BMKG dan rentang nilai"):
             selected_bmkg = st.multiselect("Kategori Intensitas BMKG:", all_categories, default=all_categories)
             max_limit_ch = float(df_raw["Curah_Hujan"].max() or 200.0)
             ch_range = st.slider("Rentang Curah Hujan (mm):", min_value=0.0, max_value=max_limit_ch, value=(0.0, max_limit_ch), step=1.0)
@@ -500,20 +515,10 @@ with st.sidebar:
     # ==============================================================================
     else:
         # ==================== SIDEBAR DATA DEBIT BENDUNG ====================
-        st.subheader("💧 1. Basis Data Bendung")
-        st.info("""
-        **4 Bendung di Kab. Tegal:**
-        - Bendung Rajabawah (D.I. Rajabawah)
-        - Bendung Pondoh (D.I. Pondoh)
-        - Bendung Kemaron (D.I. Gung, Kemaron)
-        - Bendung Lengkong (D.I. Lengkong)
-        
-        **Tahun Hidrologi:** 2004/2005 - 2024/2025 (21 Thn)  
-        **Format:** 24 Periode 1/2 Bulanan  
-        **Satuan:** Liter/detik (L/s)
-        """)
-        st.markdown("---")
-        st.subheader("📂 2. Ekspor Database Debit")
+        st.subheader("Basis data")
+        st.caption("Rajabawah, Pondoh, Kemaron, dan Lengkong · Pengukuran setengah bulanan")
+        st.divider()
+        st.subheader("Unduh basis data")
         df_bendung_side = bendung_analysis.load_bendung_dataset()
         if not df_bendung_side.empty:
             side_buf = io.BytesIO()
@@ -521,7 +526,7 @@ with st.sidebar:
                 df_bendung_side.to_excel(w_side, index=False, sheet_name="Data Debit Bendung")
             side_buf.seek(0)
             st.download_button(
-                label="📥 Unduh Database Debit (.xlsx)",
+                label="Unduh Excel",
                 data=side_buf.getvalue(),
                 file_name=f"Database_Debit_4_Bendung_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -529,7 +534,7 @@ with st.sidebar:
             )
             csv_side_bytes = df_bendung_side.to_csv(index=False).encode("utf-8")
             st.download_button(
-                label="📄 Unduh Database Debit (.csv)",
+                label="Unduh CSV",
                 data=csv_side_bytes,
                 file_name=f"Database_Debit_4_Bendung_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv",
@@ -538,7 +543,7 @@ with st.sidebar:
 
 
 
-if app_mode == "🌧️ CURAH HUJAN":
+if app_mode == "Curah Hujan":
     # PROSES FILTER DATA
     # ==============================================================================
     filtered_df = df_raw.copy()
@@ -547,7 +552,7 @@ if app_mode == "🌧️ CURAH HUJAN":
     filtered_df = filtered_df[filtered_df["Stasiun"].isin(selected_stations)]
 
     # Filter Waktu
-    if time_filter_mode == "Rentang Tanggal Bebas":
+    if time_filter_mode == "Rentang tanggal":
         filtered_df = filtered_df[
             (filtered_df["Tanggal"].dt.date >= start_date) & 
             (filtered_df["Tanggal"].dt.date <= end_date)
@@ -583,36 +588,16 @@ if app_mode == "🌧️ CURAH HUJAN":
 
 
     # ==============================================================================
-    # MAIN PANEL: HEADER & BRANDING DPUPR KABUPATEN TEGAL
+    # Ringkasan data terfilter
     # ==============================================================================
-    logo_main_b64 = get_base64_image("assets/logo_pupr_tegal.png")
-    if logo_main_b64:
-        st.markdown(f"""
-        <div class="pupr-header-card">
-            <div class="pupr-header-content">
-                <img src="data:image/png;base64,{logo_main_b64}" class="pupr-header-logo" alt="Logo DPUPR Kab Tegal" />
-                <div class="pupr-title-box">
-                    <div class="pupr-tagline">PEMERINTAH KABUPATEN TEGAL</div>
-                    <div class="pupr-title">DINAS PEKERJAAN UMUM DAN PENATAAN RUANG</div>
-                    <div class="pupr-subtitle">Sistem Informasi & Analisis Data Curah Hujan, Debit Andalan Irigasi (Weibull Q80) & Kala Ulang Hidrologi</div>
-                </div>
-            </div>
-            <div class="pupr-header-badges">
-                <span class="pupr-badge pupr-badge-primary">🏛️ DPUPR KAB. TEGAL</span>
-                <span class="pupr-badge pupr-badge-gold">🌊 Bidang SDA & Jasa Konstruksi</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.title("🏛️ DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL")
-        st.caption("Bidang Sumber Daya Air dan Jasa Konstruksi — Sistem Analisis Data Curah Hujan & Hidrologi")
-
-    st.markdown(
-        f"Hasil filter data hidrologi sesuai kriteria sidebar: "
-        f"<span class='filter-badge'>📅 {filter_periode_str}</span> "
-        f"<span class='filter-badge'>📍 {len(selected_stations)} Stasiun Terpilih</span> "
-        f"<span class='filter-badge'>🌧️ {'Hari Hujan Saja' if only_rain_days else 'Semua Hari'}</span>",
-        unsafe_allow_html=True
+    render_dashboard_header(
+        "Curah hujan",
+        "Pengamatan harian dan analisis hidrologi Kabupaten Tegal.",
+        (
+            filter_periode_str,
+            f"{len(selected_stations)} stasiun",
+            "Hari hujan saja" if only_rain_days else "Semua hari"
+        )
     )
 
     if filtered_df.empty:
@@ -636,28 +621,18 @@ if app_mode == "🌧️ CURAH HUJAN":
     rusak_count = (filtered_df["Status"] == "RUSAK").sum()
     belum_ada_count = (filtered_df["Status"].isin(["Belum Ada Data", "Kosong"])).sum()
 
-    # Tampilkan Kartu KPI dalam Kotak Rapi
-    with st.container(border=True):
+    with st.container():
         col_m1, col_m2, col_m3, col_m4, col_m5, col_m6 = st.columns(6)
-        col_m1.metric("Total Curah Hujan", f"{total_ch:,.1f} mm")
-        col_m2.metric("Rata-rata Harian", f"{mean_ch:,.2f} mm")
-        col_m3.metric("CH Maksimum", f"{max_ch:,.1f} mm", help=f"Terjadi pada {max_info}")
-        col_m4.metric("Hari Hujan (>0mm)", f"{hari_hujan_count:,}")
-        col_m5.metric("Hari Kering (0mm)", f"{hari_kering_count:,}")
-        col_m6.metric("Alat Rusak / Belum Isi", f"{rusak_count:,} / {belum_ada_count:,}", help=f"Sensor Rusak: {rusak_count:,} hari, Belum Ada Data: {belum_ada_count:,} hari (Total Data: {len(filtered_df):,} baris)")
-
-    # Banner Akses Cepat & Navigasi
-    with st.container(border=True):
-        col_quick1, col_quick2 = st.columns([3, 1])
-        with col_quick1:
-            st.markdown(
-                "📌 **Navigasi Cepat**: "
-                "Untuk menambah/mengoreksi data pengamatan stasiun, silakan klik tab **✍️ Input Manual** (di baris depan). "
-                "Untuk analisis keandalan irigasi & air bersih, gunakan tab **💧 Debit Andalan (Weibull)**."
-            )
-        with col_quick2:
-            st.caption("✨ Tampilan Berkotak Rapi & Terstruktur")
-
+        col_m1.metric("Total hujan", f"{total_ch:,.1f} mm", help="Akumulasi dari seluruh stasiun terpilih.")
+        col_m2.metric("Rata-rata harian", f"{mean_ch:,.2f} mm")
+        col_m3.metric("Maksimum harian", f"{max_ch:,.1f} mm", help=f"Terjadi pada {max_info}")
+        col_m4.metric("Hari hujan", f"{hari_hujan_count:,}")
+        col_m5.metric("Hari kering", f"{hari_kering_count:,}")
+        col_m6.metric(
+            "Rusak / kosong",
+            f"{rusak_count:,} / {belum_ada_count:,}",
+            help=f"{rusak_count:,} catatan sensor rusak dan {belum_ada_count:,} catatan tanpa data."
+        )
 
     # ==============================================================================
     # DOWNLOAD BUTTONS (EXCEL & PDF)
@@ -740,12 +715,11 @@ if app_mode == "🌧️ CURAH HUJAN":
         "tahun_matriks": str(mat_year)
     }
 
-    with st.container(border=True):
-        st.markdown("##### 📥 Ekspor Laporan & Unduh Hasil Analisis (Excel & PDF)")
-        col_down1, col_down2, col_down_space = st.columns([2, 2, 3])
+    with st.expander("Ekspor laporan"):
+        col_down1, col_down2 = st.columns(2)
 
         with col_down1:
-            with st.spinner("Menyiapkan file Excel (seluruh sheet lengkap & debit andalan)..."):
+            with st.spinner("Menyiapkan laporan Excel…"):
                 excel_data = export_to_excel(
                     df=filtered_df,
                     summary_df=summary_table_df,
@@ -757,7 +731,7 @@ if app_mode == "🌧️ CURAH HUJAN":
                     weibull_data=weibull_export
                 )
             st.download_button(
-                label="📥 Download Hasil (Excel .xlsx)",
+                label="Unduh Excel",
                 data=excel_data.getvalue(),
                 file_name=f"Curah_Hujan_Export_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -765,7 +739,7 @@ if app_mode == "🌧️ CURAH HUJAN":
             )
 
         with col_down2:
-            with st.spinner("Menyiapkan laporan PDF (termasuk analisis debit andalan & grafik)..."):
+            with st.spinner("Menyiapkan laporan PDF…"):
                 pdf_data = export_to_pdf(
                     df=filtered_df,
                     summary_df=summary_table_df,
@@ -773,52 +747,45 @@ if app_mode == "🌧️ CURAH HUJAN":
                     weibull_data=weibull_export
                 )
             st.download_button(
-                label="📄 Download Laporan (PDF .pdf)",
+                label="Unduh PDF",
                 data=pdf_data.getvalue(),
                 file_name=f"Laporan_Curah_Hujan_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime="application/pdf",
                 use_container_width=True
             )
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-
     # ==============================================================================
     # TABS TAMPILAN DATA & VISUALISASI
     # ==============================================================================
     tab_table, tab_input, tab_matrix, tab_hydro, tab_charts, tab_summary = st.tabs([
-        "📋 Data Harian",
-        "✍️ Input Manual",
-        "📅 Matriks Bulanan",
-        "🌊 Kala Ulang (Gumbel & LP3)",
-        "📈 Grafik & Tren",
-        "📊 Ringkasan Stasiun"
+        "Data hujan",
+        "Input manual",
+        "Matriks bulanan",
+        "Kala ulang",
+        "Grafik",
+        "Ringkasan stasiun"
     ])
 
     # ----------------- TAB 1: DATA DETAIL -----------------
     with tab_table:
-        with st.container(border=True):
-            st.subheader("📋 Kategorisasi Data Curah Hujan")
-            view_granularity = st.radio(
-                "Pilih Tingkat Kategorisasi:",
-                ["Detail Harian (Hari & Tanggal)", "Rekapitulasi Bulanan (Bulan & Tahun)", "Rekapitulasi Tahunan (Tahun)"],
-                horizontal=True
-            )
+        view_granularity = st.radio(
+            "Perincian data",
+            ["Harian", "Bulanan", "Tahunan"],
+            horizontal=True
+        )
 
-        if view_granularity == "Detail Harian (Hari & Tanggal)":
+        if view_granularity == "Harian":
             years_in_data = sorted(list(filtered_df["Tahun"].unique()))
             with st.container(border=True):
-                col_t1, col_t2, col_t3 = st.columns([2, 1, 1])
-                with col_t1:
-                    st.caption(f"Menampilkan {len(filtered_df):,} baris data terfilter. Dikategorisasikan per Stasiun, Tahun, Bulan, dan Hari.")
-                with col_t2:
+                col_table_year, col_table_search = st.columns([1, 2])
+                with col_table_year:
                     tab_yr_filter = st.selectbox(
-                        "Filter Tahun Tabel:",
+                        "Tahun",
                         ["Semua Tahun"] + [str(y) for y in years_in_data],
                         key="table_year_select"
                     )
-                with col_t3:
-                    search_kw = st.text_input("🔍 Cari kata kunci:", placeholder="Ketik tanggal, stasiun, dll...")
+                with col_table_search:
+                    search_kw = st.text_input("Cari data", placeholder="Tanggal, stasiun, atau status")
 
                 view_df = filtered_df.copy()
                 if tab_yr_filter != "Semua Tahun":
@@ -827,6 +794,8 @@ if app_mode == "🌧️ CURAH HUJAN":
                 if search_kw:
                     mask = view_df.astype(str).apply(lambda row: row.str.contains(search_kw, case=False).any(), axis=1)
                     view_df = view_df[mask]
+
+                st.caption(f"{len(view_df):,} baris")
 
                 # Susun kolom rapi: Stasiun, Tahun, Bulan, Hari, Tanggal, Curah Hujan, Klasifikasi BMKG, Status
                 display_table = view_df[["Stasiun", "Tahun", "Nama_Bulan", "Hari", "Tanggal", "Curah_Hujan", "Kategori_BMKG", "Status"]].copy()
@@ -847,7 +816,7 @@ if app_mode == "🌧️ CURAH HUJAN":
                     }
                 )
 
-        elif view_granularity == "Rekapitulasi Bulanan (Bulan & Tahun)":
+        elif view_granularity == "Bulanan":
             with st.container(border=True):
                 st.caption("Data teragregasi per Stasiun, Tahun, dan Bulan (Total, Rata-rata, Nilai Maksimum, dan Jumlah Hari Hujan).")
                 m_agg = filtered_df.groupby(["Stasiun", "Tahun", "Bulan", "Nama_Bulan"]).agg(
@@ -1021,22 +990,8 @@ if app_mode == "🌧️ CURAH HUJAN":
     # ----------------- TAB: GRAFIK & TREN -----------------
     with tab_charts:
         with st.container(border=True):
-            st.subheader("📈 Analisis Grafik Interaktif")
-            st.caption("Visualisasi tren fluktuasi curah hujan harian, akumulasi bulanan, distribusi intensitas BMKG, dan peringkat stasiun sesuai kriteria sidebar.")
+            st.subheader("Grafik curah hujan")
         
-            # Info Box Sinkronisasi Filter Sidebar
-            st.markdown(
-                f"<div style='background-color: #F8FAFC; border-left: 4.5px solid #0284C7; border-radius: 8px; padding: 10px 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>"
-                f"<div style='font-weight: 700; color: #0F172A; font-size: 0.88rem; margin-bottom: 2px;'>📌 Parameter Filter Aktif (Tersinkronisasi dengan Sidebar):</div>"
-                f"<div style='font-size: 0.82rem; color: #334155;'>"
-                f"📍 <b>Stasiun Pengamatan ({len(selected_stations)} Stasiun):</b> <code>{', '.join(selected_stations[:10])}{'...' if len(selected_stations) > 10 else ''}</code> &nbsp;&bull;&nbsp; "
-                f"📅 <b>Periode Waktu:</b> <code>{filter_periode_str}</code> &nbsp;&bull;&nbsp; "
-                f"🌧️ <b>Kondisi:</b> <code>{'Hari Hujan > 0 mm' if only_rain_days else 'Semua Hari'}</code>"
-                f"</div>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
-
             chart_type = st.radio(
                 "Pilih Jenis Grafik:",
                 ["Tren Curah Hujan Harian (Line)", "Total Curah Hujan Bulanan (Bar)", "Distribusi Intensitas BMKG (Donut)", "Perbandingan Akumulasi Stasiun (Bar)"],
@@ -1360,8 +1315,8 @@ if app_mode == "🌧️ CURAH HUJAN":
             return sync_msg
 
         with st.container(border=True):
-            st.subheader("✍️ Input & Pembaruan Data Curah Hujan Manual")
-            st.caption("Tambahkan data curah hujan harian terbaru atau perbarui data pengamatan stasiun langsung ke sistem. Tab ini kini berada di baris depan agar sangat mudah diakses.")
+            st.subheader("Input curah hujan")
+            st.caption("Tambah atau perbarui pengamatan harian per stasiun.")
 
             input_mode = st.radio(
                 "Pilih Metode Input:",
@@ -1483,7 +1438,7 @@ if app_mode == "🌧️ CURAH HUJAN":
                     st.session_state[f"rusak_pick_{stn}_{yr}_{mo}"] = sorted(list(curr_selected))
                     st.session_state.pop(f"editor_{stn}_{yr}_{mo}", None)
 
-                st.markdown("---")
+                st.divider()
                 st.markdown("###### ⚙️ Opsi & Pilihan Status Alat (Normal / RUSAK)")
                 col_opt1, col_opt2 = st.columns([3, 2])
                 with col_opt1:
@@ -1850,41 +1805,16 @@ else:
     # ==============================================================================
     # MAIN PANEL: DATA DEBIT BENDUNG
     # ==============================================================================
-    logo_main_b64 = get_base64_image("assets/logo_pupr_tegal.png")
-    if logo_main_b64:
-        st.markdown(f"""
-        <div class="pupr-header-card">
-            <div class="pupr-header-content">
-                <img src="data:image/png;base64,{logo_main_b64}" class="pupr-header-logo" alt="Logo DPUPR Kab Tegal" />
-                <div class="pupr-title-box">
-                    <div class="pupr-tagline">PEMERINTAH KABUPATEN TEGAL</div>
-                    <div class="pupr-title">DINAS PEKERJAAN UMUM DAN PENATAAN RUANG</div>
-                    <div class="pupr-subtitle">Sistem Pengelolaan Data Debit & Analisis Debit Andalan 4 Bendung (Weibull Q80)</div>
-                </div>
-            </div>
-            <div class="pupr-header-badges">
-                <span class="pupr-badge pupr-badge-primary">🏛️ DPUPR KAB. TEGAL</span>
-                <span class="pupr-badge pupr-badge-gold">🌊 Bidang SDA & Jasa Konstruksi</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.title("🏛️ DINAS PEKERJAAN UMUM DAN PENATAAN RUANG KABUPATEN TEGAL")
-        st.caption("Bidang Sumber Daya Air dan Jasa Konstruksi — Pengelolaan Data Debit & Analisis Debit Andalan Bendung")
-
-    st.markdown(
-        f"Kategori Modul: <span class='filter-badge'>💧 DATA DEBIT BENDUNG</span> "
-        f"<span class='filter-badge'>📍 4 Bendung: Rajabawah, Pondoh, Kemaron, Lengkong</span> "
-        f"<span class='filter-badge'>📅 2004/2005 - 2024/2025 (21 Tahun Hidrologi)</span> "
-        f"<span class='filter-badge'>📊 Satuan: Liter/Detik (L/s)</span>",
-        unsafe_allow_html=True
+    render_dashboard_header(
+        "Debit bendung",
+        "Pengamatan debit dan analisis debit andalan irigasi.",
+        ("4 bendung", "2004/2005–2024/2025", "Liter/detik (L/s)")
     )
-    st.markdown("<br>", unsafe_allow_html=True)
 
     tab_debit_data, tab_debit_input, tab_debit_weibull = st.tabs([
-        "📋 Data Debit Bendung",
-        "✍️ Input Debit Manual",
-        "💧 Debit Andalan Bendung (Weibull)"
+        "Data debit",
+        "Input manual",
+        "Debit andalan"
     ])
 
     with tab_debit_data:
