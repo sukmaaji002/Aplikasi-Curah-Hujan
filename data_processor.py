@@ -502,7 +502,9 @@ def add_or_update_rainfall_record(
         status_final = "RUSAK"
     else:
         status_final = "Normal"
-        val_final = float(rain_val) if rain_val is not None else 0.0
+        if rain_val is None or pd.isna(rain_val):
+            raise ValueError("Isi curah hujan terukur, atau tandai alat RUSAK.")
+        val_final = float(rain_val)
 
     cat = classify_bmkg(val_final, status_final)
 
@@ -522,7 +524,7 @@ def add_or_update_rainfall_record(
         "Curah_Hujan": val_final,
         "Status": status_final,
         "Kategori_BMKG": cat
-    }])
+    }]).astype({"Curah_Hujan": "float64"})
 
     if mask.any():
         df_copy = df_copy[~mask]
@@ -537,6 +539,15 @@ def add_or_update_rainfall_record(
     return df_updated
 
 
+def rainfall_entry(value, status):
+    """Normalize the three entry states without turning missing data into a zero."""
+    if status == "RUSAK":
+        return None, "RUSAK"
+    if value is None or pd.isna(value):
+        return None, "Belum Ada Data"
+    return float(value), "Normal"
+
+
 def save_bulk_monthly_records(
     df_main: pd.DataFrame,
     station: str,
@@ -544,69 +555,52 @@ def save_bulk_monthly_records(
     month: int,
     daily_items: list
 ) -> pd.DataFrame:
-    """
-    Menyimpan data harian satu bulan penuh sekaligus untuk satu stasiun.
-    daily_items: list of dict, misal: [{'Hari': 1, 'Curah_Hujan': 15.0, 'Status': 'Normal'}, ...]
-    """
-    df_copy = df_main.copy()
+    """Update only changed station-days; return the original frame for a no-op."""
     stn_clean = str(station).strip()
-    
-    rows_to_add = []
-    days_to_remove = []
+    station_matches = df_main["Stasiun"].astype(str).str.strip().str.lower() == stn_clean.lower()
+    dates = pd.to_datetime(df_main["Tanggal"]).dt.normalize()
+    month_matches = station_matches & (dates.dt.year == year) & (dates.dt.month == month)
+    # Retain the stored spelling of an existing station.
+    known_stations = df_main.loc[station_matches, "Stasiun"]
+    if not known_stations.empty:
+        stn_clean = known_stations.iloc[0]
+    existing = {
+        date.day: rainfall_entry(row.Curah_Hujan, row.Status)
+        for date, row in zip(dates[month_matches], df_main.loc[month_matches].itertuples())
+    }
 
+    updates = {}
     for item in daily_items:
-        d = int(item["Hari"])
-        stat = str(item.get("Status", "Normal")).strip()
-        r_val = item.get("Curah_Hujan", None)
-
-        if stat == "RUSAK" or r_val is None or pd.isna(r_val):
-            val_final = None
-            stat_final = "RUSAK" if stat == "RUSAK" else "Normal"
-            if stat_final == "Normal" and (r_val is None or pd.isna(r_val)):
-                val_final = 0.0
-        else:
-            stat_final = "Normal"
-            val_final = float(r_val)
-
+        day = int(item["Hari"])
         try:
-            dt = datetime.date(year, month, d)
+            date = pd.Timestamp(datetime.date(year, month, day))
         except ValueError:
             continue
-
-        cat = classify_bmkg(val_final, stat_final)
-        dt_pandas = pd.to_datetime(dt)
-
-        rows_to_add.append({
-            "Tanggal": dt_pandas,
-            "Tahun": int(year),
-            "Bulan": int(month),
+        value, status = rainfall_entry(item.get("Curah_Hujan"), item.get("Status"))
+        if (value, status) == existing.get(day, (None, "Belum Ada Data")):
+            updates.pop(date, None)
+            continue
+        updates[date] = {
+            "Tanggal": date,
+            "Tahun": year,
+            "Bulan": month,
             "Nama_Bulan": MONTH_NAMES_ID[month],
-            "Hari": d,
+            "Hari": day,
             "Stasiun": stn_clean,
-            "Curah_Hujan": val_final,
-            "Status": stat_final,
-            "Kategori_BMKG": cat
-        })
-        days_to_remove.append(dt)
+            "Curah_Hujan": value,
+            "Status": status,
+            "Kategori_BMKG": classify_bmkg(value, status),
+        }
 
-    if not rows_to_add:
+    if not updates:
         return df_main
 
-    # Hapus data lama untuk stasiun dan tanggal-tanggal tersebut
-    mask = (
-        (df_copy["Stasiun"].astype(str).str.strip().str.lower() == stn_clean.lower()) &
-        (df_copy["Tahun"] == year) &
-        (df_copy["Bulan"] == month)
-    )
-    df_copy = df_copy[~mask]
-
-    df_updated = pd.concat([df_copy, pd.DataFrame(rows_to_add)], ignore_index=True)
-    df_updated.sort_values(by=["Tanggal", "Stasiun"], inplace=True)
-    df_updated.reset_index(drop=True, inplace=True)
-
-    log_manual_entry(stn_clean, f"{year}-{month:02d}", f"{len(rows_to_add)} hari", "BULK", "-", "BULK_UPDATE")
-
-    return df_updated
+    replace = station_matches & dates.isin(updates)
+    changed = pd.DataFrame(updates.values()).astype({"Curah_Hujan": "float64"})
+    result = pd.concat([df_main.loc[~replace], changed], ignore_index=True)
+    result.sort_values(by=["Tanggal", "Stasiun"], inplace=True, ignore_index=True)
+    log_manual_entry(stn_clean, f"{year}-{month:02d}", f"{len(updates)} hari", "BULK", "-", "BULK_UPDATE")
+    return result
 
 
 def delete_rainfall_record(

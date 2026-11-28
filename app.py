@@ -53,6 +53,7 @@ from data_processor import (
     get_pmax_cross_matrix,
     add_or_update_rainfall_record,
     save_bulk_monthly_records,
+    rainfall_entry,
     delete_rainfall_record,
     persist_dataframe,
     MONTH_NAMES_ID
@@ -324,6 +325,9 @@ def load_data(source_type="default", uploaded_file=None, raw_text="", _mtime=0):
         df = parse_rainfall_csv(raw_text)
         return df, "Teks CSV Ditempel"
     
+    if source_type != "default":
+        return pd.DataFrame(), "Sumber data belum diisi"
+
     # Cek apakah parquet default ada
     if os.path.exists(DEFAULT_PARQUET):
         df = pd.read_parquet(DEFAULT_PARQUET)
@@ -400,7 +404,8 @@ with st.sidebar:
             df_raw, source_name = load_data(source_key, uploaded_file, raw_pasted_text, _mtime=current_mtime)
 
         if df_raw.empty:
-            st.error("Data curah hujan belum tersedia atau format tidak sesuai.")
+            if source_key == "default" or uploaded_file is not None or raw_pasted_text.strip():
+                st.error("Data curah hujan belum tersedia atau format tidak sesuai.")
             st.stop()
 
         st.caption(f"{len(df_raw):,} baris · {df_raw['Stasiun'].nunique()} stasiun")
@@ -422,11 +427,16 @@ with st.sidebar:
         time_filter_mode = st.selectbox("Metode filter", ["Rentang tanggal", "Tahun dan bulan", "Musim"])
 
         if time_filter_mode == "Rentang tanggal":
+            preferred_start = datetime.date(2020, 1, 1)
+            preferred_end = datetime.date(2020, 12, 31)
+            overlaps = min_date <= preferred_end and max_date >= preferred_start
+            default_start = max(min_date, preferred_start) if overlaps else min_date
+            default_end = min(max_date, preferred_end) if overlaps else max_date
             col_d1, col_d2 = st.columns(2)
             with col_d1:
-                start_date = st.date_input("Mulai", value=datetime.date(2020, 1, 1), min_value=min_date, max_value=max_date)
+                start_date = st.date_input("Mulai", value=default_start, min_value=min_date, max_value=max_date)
             with col_d2:
-                end_date = st.date_input("Sampai", value=datetime.date(2020, 12, 31), min_value=min_date, max_value=max_date)
+                end_date = st.date_input("Sampai", value=default_end, min_value=min_date, max_value=max_date)
         
             if start_date > end_date:
                 st.error("Tanggal awal tidak boleh melebihi tanggal akhir!")
@@ -442,7 +452,7 @@ with st.sidebar:
         
             # Pilihan Tahun
             all_y_check = st.checkbox("Pilih Semua Tahun", value=False)
-            default_y = all_years if all_y_check else [2020]
+            default_y = all_years if all_y_check else [2020 if 2020 in all_years else all_years[-1]]
             selected_years = st.multiselect("Pilih Tahun:", all_years, default=default_y)
             if not selected_years:
                 st.warning("Pilih minimal satu tahun!")
@@ -493,7 +503,7 @@ with st.sidebar:
         selected_stations = st.multiselect(
             "Stasiun pengamatan",
             options=all_stations,
-            default=st.session_state["selected_stations_state"]
+            default=[s for s in st.session_state["selected_stations_state"] if s in all_stations] or all_stations[:5]
         )
         if not selected_stations:
             st.warning("Pilih minimal satu stasiun!")
@@ -1314,15 +1324,21 @@ if app_mode == "Curah Hujan":
                         sync_msg = f" • ⚠️ *Lokal tersimpan, gagal sync GitHub: {sync_res.get('message')}*"
             return sync_msg
 
-        with st.container(border=True):
-            st.subheader("Input curah hujan")
-            st.caption("Tambah atau perbarui pengamatan harian per stasiun.")
+        if source_key != "default":
+            st.info("Data unggahan atau tempelan hanya untuk dilihat dan diekspor. Pilih **Data tersimpan** untuk menyimpan perubahan curah hujan.")
+        elif notice := st.session_state.pop("rainfall_month_notice", None):
+            st.success(notice)
+        input_mode = None
+        if source_key == "default":
+            with st.container(border=True):
+                st.subheader("Input curah hujan")
+                st.caption("Tambah atau perbarui pengamatan harian per stasiun.")
 
-            input_mode = st.radio(
-                "Pilih Metode Input:",
-                ["Input Data Harian Tunggal (Single Entry)", "Input Matriks 1 Bulan Penuh (Grid Editor)"],
-                horizontal=True
-            )
+                input_mode = st.radio(
+                    "Pilih Metode Input:",
+                    ["Input Data Harian Tunggal (Single Entry)", "Input Matriks 1 Bulan Penuh (Grid Editor)"],
+                    horizontal=True
+                )
 
         if input_mode == "Input Data Harian Tunggal (Single Entry)":
             with st.container(border=True):
@@ -1349,15 +1365,15 @@ if app_mode == "Curah Hujan":
                         "Curah Hujan (mm):",
                         min_value=0.0,
                         max_value=500.0,
-                        value=0.0,
+                        value=None,
                         step=0.1,
                         format="%.1f",
                         disabled=is_rusak,
                         key=f"ch_input_single_{'rusak' if is_rusak else 'normal'}",
-                        help="Isian otomatis dinonaktifkan dan bernilai 0.0 jika status alat RUSAK." if is_rusak else "Ketik 0 jika cuaca cerah/berawan dan tidak ada hujan sama sekali."
+                        help="Isian dinonaktifkan jika alat RUSAK." if is_rusak else "Ketik 0 jika cuaca cerah/berawan dan tidak ada hujan sama sekali."
                     )
                     if is_rusak:
-                        st.warning("⚠️ Alat pengukur berstatus **RUSAK**: Isian curah hujan otomatis dinonaktifkan dan bernilai 0.0 mm. Pada tabel dan laporan, data akan dikosongkan dan diarsir hitam sesuai ketentuan.")
+                        st.warning("⚠️ Alat pengukur berstatus **RUSAK**: Nilai curah hujan dikosongkan dan ditampilkan dengan arsiran hitam.")
                         ch_input = None
 
                 submit_single = st.button("💾 Simpan Data Harian", use_container_width=True, type="primary")
@@ -1365,6 +1381,8 @@ if app_mode == "Curah Hujan":
                 if submit_single:
                     if not stn_input:
                         st.error("Silakan tentukan nama / kode stasiun!")
+                    elif not is_rusak and ch_input is None:
+                        st.error("Isi hasil pengukuran. Masukkan 0 hanya jika tercatat tidak hujan.")
                     else:
                         new_df = add_or_update_rainfall_record(
                             df_main=df_raw,
@@ -1382,10 +1400,10 @@ if app_mode == "Curah Hujan":
                         else:
                             st.error("Gagal menyimpan data ke sistem penyimpanan.")
 
-        else:
+        elif input_mode == "Input Matriks 1 Bulan Penuh (Grid Editor)":
             with st.container(border=True):
                 st.markdown("##### 📅 Input Matriks 1 Bulan Penuh (Tabel 1 s/d 31 Hari)")
-                st.caption("Isi seluruh nilai curah hujan harian untuk stasiun dan bulan yang dipilih dalam satu tabel sekaligus.")
+                st.caption("Isi hanya tanggal yang sudah diukur. Biarkan tanggal yang belum diukur kosong, dan masukkan 0 hanya jika tercatat tidak hujan.")
 
                 col_b1, col_b2, col_b3 = st.columns(3)
                 with col_b1:
@@ -1398,6 +1416,22 @@ if app_mode == "Curah Hujan":
                 import calendar
                 days_in_month = calendar.monthrange(int(bulk_yr), int(bulk_m))[1]
 
+                def persist_rainfall_month(daily_items):
+                    new_df = save_bulk_monthly_records(
+                        df_raw, bulk_stn, int(bulk_yr), int(bulk_m), daily_items
+                    )
+                    if new_df is df_raw:
+                        st.info("Tidak ada perubahan untuk disimpan.")
+                    elif persist_dataframe(new_df):
+                        st.cache_data.clear()
+                        gh_msg = handle_post_save_sync(
+                            f"input bulanan Stasiun {bulk_stn} ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})"
+                        )
+                        st.session_state["rainfall_month_notice"] = "✅ Perubahan data bulanan berhasil disimpan." + gh_msg
+                        st.rerun()
+                    else:
+                        st.error("Gagal menyimpan data.")
+
                 # Ambil data yang sudah ada untuk bulan ini (jika ada)
                 existing_subset = df_raw[
                     (df_raw["Stasiun"] == bulk_stn) & 
@@ -1408,7 +1442,7 @@ if app_mode == "Curah Hujan":
                 existing_map = {}
                 for _, row in existing_subset.iterrows():
                     existing_map[int(row["Hari"])] = {
-                        "Curah_Hujan": row["Curah_Hujan"] if pd.notna(row["Curah_Hujan"]) else 0.0,
+                        "Curah_Hujan": row["Curah_Hujan"] if pd.notna(row["Curah_Hujan"]) else None,
                         "Status": str(row["Status"])
                     }
 
@@ -1460,32 +1494,32 @@ if app_mode == "Curah Hujan":
                             on_click=set_all_days_status,
                             args=(bulk_stn, bulk_yr, bulk_m, days_in_month, True),
                             use_container_width=True,
-                            help="Tandai seluruh hari pada bulan ini berstatus Alat RUSAK (nilai curah hujan 0.0 mm / diarsir hitam)"
+                            help="Tandai seluruh hari pada bulan ini berstatus Alat RUSAK (nilai curah hujan tanpa hasil ukur / diarsir hitam)"
                         )
                     with col_b_opt2:
                         st.button(
-                            "🟢 Reset Semua Normal",
+                            "🟢 Hapus Semua Tanda RUSAK",
                             key=f"btn_all_norm_opt_{bulk_stn}_{bulk_yr}_{bulk_m}",
                             on_click=set_all_days_status,
                             args=(bulk_stn, bulk_yr, bulk_m, days_in_month, False),
                             use_container_width=True,
-                            help="Kembalikan seluruh hari pada bulan ini ke status Normal"
+                            help="Kembalikan seluruh hari pada bulan ini tanpa tanda RUSAK"
                         )
                 with col_opt2:
                     bulk_view_style = st.radio(
                         "Pilihan Model Pengisian:",
                         [
-                            "📋 Tabel Interaktif (Otomatis Kunci & 0 mm saat Rusak)",
+                            "📋 Tabel Interaktif",
                             "📊 Grid Spreadsheet (Data Editor)"
                         ],
                         horizontal=False,
                         key="bulk_view_style_choice"
                     )
 
-                if bulk_view_style == "📋 Tabel Interaktif (Otomatis Kunci & 0 mm saat Rusak)":
+                if bulk_view_style == "📋 Tabel Interaktif":
                     st.info(
                         f"💡 Menampilkan {days_in_month} hari untuk **Stasiun {bulk_stn}** — Bulan **{MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}**. "
-                        "Ketika kotak **Alat Rusak** dicentang, status otomatis berubah menjadi **RUSAK**, dan kotak isian curah hujan otomatis **terkunci (tidak dapat diisi) serta nilainya berubah menjadi 0.0 mm**."
+                        "Ketika kotak **Alat Rusak** dicentang, status otomatis berubah menjadi **RUSAK**, dan kotak isian curah hujan otomatis **terkunci (tidak dapat diisi) dengan nilai kosong**."
                     )
 
                     # Action Bar Tombol Cepat Tepat di Atas Tabel
@@ -1506,16 +1540,16 @@ if app_mode == "Curah Hujan":
                                 on_click=set_all_days_status,
                                 args=(bulk_stn, bulk_yr, bulk_m, days_in_month, True),
                                 use_container_width=True,
-                                help=f"Klik untuk otomatis mencentang status ALAT RUSAK pada seluruh {days_in_month} hari di bulan ini (kolom CH terkunci 0.0 mm dan berstatus RUSAK)"
+                                help=f"Klik untuk otomatis mencentang status ALAT RUSAK pada seluruh {days_in_month} hari di bulan ini (kolom CH terkunci dan kosong)"
                             )
                         with col_bar_btn2:
                             st.button(
-                                "🟢 Reset Semua Normal",
+                                "🟢 Hapus Semua Tanda RUSAK",
                                 key=f"btn_all_norm_tbl_{bulk_stn}_{bulk_yr}_{bulk_m}",
                                 on_click=set_all_days_status,
                                 args=(bulk_stn, bulk_yr, bulk_m, days_in_month, False),
                                 use_container_width=True,
-                                help="Klik untuk mengembalikan seluruh hari di bulan ini ke status Normal"
+                                help="Klik untuk mengembalikan seluruh hari di bulan ini tanpa tanda RUSAK"
                             )
 
                     # Header Tabel
@@ -1531,8 +1565,8 @@ if app_mode == "Curah Hujan":
                     table_items = {}
                     with st.container(height=520, border=True):
                         for d in range(1, days_in_month + 1):
-                            ex = existing_map.get(d, {"Curah_Hujan": 0.0, "Status": "Normal"})
-                            init_rusak = (d in rusak_quick_pick) or (ex["Status"] == "RUSAK")
+                            ex = existing_map.get(d, {"Curah_Hujan": None, "Status": "Belum Ada Data"})
+                            init_rusak = d in rusak_quick_pick
 
                             c1, c2, c3, c4, c5, c6 = st.columns([0.8, 1.8, 1.8, 1.5, 2.0, 2.5])
                             c1.markdown(f"**{d}**")
@@ -1547,16 +1581,11 @@ if app_mode == "Curah Hujan":
                                 help=f"Centang jika alat rusak pada tgl {d}"
                             )
 
-                            if is_chk_rusak:
-                                c4.markdown("⬛ **RUSAK**")
-                            else:
-                                c4.markdown("🟢 **Normal**")
-
                             ch_val = c5.number_input(
                                 f"CH Tgl {d}",
                                 min_value=0.0,
                                 max_value=500.0,
-                                value=0.0 if is_chk_rusak else float(ex["Curah_Hujan"]),
+                                value=None if is_chk_rusak or ex["Status"] == "RUSAK" else ex["Curah_Hujan"],
                                 step=0.1,
                                 format="%.1f",
                                 disabled=is_chk_rusak,
@@ -1564,60 +1593,44 @@ if app_mode == "Curah Hujan":
                                 label_visibility="collapsed"
                             )
 
-                            if is_chk_rusak:
-                                c6.markdown("🔒 *Terkunci 0.0 mm (Arsir Hitam)*")
-                                table_items[d] = {
-                                    "Hari": d,
-                                    "Curah_Hujan": None,
-                                    "Status": "RUSAK"
-                                }
+                            value, status = rainfall_entry(ch_val, "RUSAK" if is_chk_rusak else "Normal")
+                            c4.markdown(f"**{status}**")
+                            if status == "RUSAK":
+                                c6.markdown("🔒 *Tidak ada hasil ukur (Arsir Hitam)*")
+                            elif value is None:
+                                c6.markdown("*Belum ada pengukuran*")
+                            elif value > 0:
+                                c6.markdown(f"🌧️ *Hujan {value:.1f} mm*")
                             else:
-                                if ch_val > 0:
-                                    c6.markdown(f"🌧️ *Hujan {ch_val:.1f} mm*")
-                                else:
-                                    c6.markdown("☀️ *Cerah (0.0 mm)*")
-                                table_items[d] = {
-                                    "Hari": d,
-                                    "Curah_Hujan": ch_val,
-                                    "Status": "Normal"
-                                }
+                                c6.markdown("☀️ *Tidak hujan (0.0 mm)*")
+                            table_items[d] = {"Hari": d, "Curah_Hujan": value, "Status": status}
 
                     col_save1, col_save2 = st.columns([2, 4])
                     with col_save1:
-                        if st.button(f"💾 Simpan Seluruh Bulan ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})", type="primary", use_container_width=True, key="btn_save_interactive"):
+                        if st.button(f"💾 Simpan Perubahan Bulanan ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})", type="primary", use_container_width=True, key="btn_save_interactive"):
                             daily_items = list(table_items.values())
-                            new_df = save_bulk_monthly_records(
-                                df_main=df_raw,
-                                station=bulk_stn,
-                                year=int(bulk_yr),
-                                month=int(bulk_m),
-                                daily_items=daily_items
-                            )
-                            saved = persist_dataframe(new_df)
-                            if saved:
-                                st.cache_data.clear()
-                                gh_msg = handle_post_save_sync(f"input bulanan {days_in_month} hari Stasiun {bulk_stn} ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})")
-                                st.success(f"✅ Data {days_in_month} hari untuk Stasiun {bulk_stn} ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}) berhasil disimpan secara permanen!{gh_msg}")
-                                st.rerun()
-                            else:
-                                st.error("Gagal menyimpan data.")
+                            persist_rainfall_month(daily_items)
 
                 else:
                     # Mode Spreadsheet Grid
                     grid_data = []
                     for d in range(1, days_in_month + 1):
-                        ex = existing_map.get(d, {"Curah_Hujan": 0.0, "Status": "Normal"})
-                        is_d_rusak = (d in rusak_quick_pick) or (ex["Status"] == "RUSAK")
+                        ex = existing_map.get(d, {"Curah_Hujan": None, "Status": "Belum Ada Data"})
+                        is_d_rusak = d in rusak_quick_pick
+                        value, status = rainfall_entry(
+                            None if ex["Status"] == "RUSAK" else ex["Curah_Hujan"],
+                            "RUSAK" if is_d_rusak else "Normal"
+                        )
                         grid_data.append({
                             "Hari": d,
                             "Tanggal": f"{int(bulk_yr)}-{int(bulk_m):02d}-{d:02d}",
-                            "Status Alat": "RUSAK" if is_d_rusak else "Normal",
-                            "Curah Hujan (mm)": 0.0 if is_d_rusak else float(ex["Curah_Hujan"])
+                            "Status Alat": status,
+                            "Curah Hujan (mm)": value
                         })
 
-                    df_grid = pd.DataFrame(grid_data)
+                    df_grid = pd.DataFrame(grid_data).astype({"Curah Hujan (mm)": "float64"})
 
-                    st.info(f"💡 Mode Grid Spreadsheet: Ubah kolom **Status Alat** menjadi **RUSAK** jika alat rusak. Nilai curah hujan untuk status RUSAK otomatis dikosongkan dan diarsir hitam saat disimpan.")
+                    st.info(f"💡 Mode Grid Spreadsheet: Biarkan angka kosong jika belum ada pengukuran. Pilih **RUSAK** jika alat rusak. Untuk menghapus hasil ukur, kosongkan angkanya atau pilih **Belum Ada Data**.")
 
                     col_g_act1, col_g_act2, col_g_info = st.columns([3, 2.5, 4.5])
                     with col_g_act1:
@@ -1627,11 +1640,11 @@ if app_mode == "Curah Hujan":
                             on_click=set_all_days_status,
                             args=(bulk_stn, bulk_yr, bulk_m, days_in_month, True),
                             use_container_width=True,
-                            help="Set seluruh baris dalam grid bulan ini menjadi RUSAK (0.0 mm)"
+                            help="Set seluruh baris dalam grid bulan ini menjadi RUSAK tanpa hasil ukur"
                         )
                     with col_g_act2:
                         st.button(
-                            "🟢 Reset Semua Grid Normal",
+                            "🟢 Hapus Semua Tanda RUSAK di Grid",
                             key=f"btn_all_norm_grid_{bulk_stn}_{bulk_yr}_{bulk_m}",
                             on_click=set_all_days_status,
                             args=(bulk_stn, bulk_yr, bulk_m, days_in_month, False),
@@ -1651,8 +1664,8 @@ if app_mode == "Curah Hujan":
                             "Tanggal": st.column_config.TextColumn("Tanggal", disabled=True),
                             "Status Alat": st.column_config.SelectboxColumn(
                                 "Status Alat",
-                                options=["Normal", "RUSAK"],
-                                help="Pilih Normal atau RUSAK. Jika RUSAK, isian otomatis menjadi nol dan diarsir hitam.",
+                                options=["Belum Ada Data", "Normal", "RUSAK"],
+                                help="Sel kosong berarti belum ada data. Masukkan 0 jika tercatat tidak hujan. RUSAK selalu disimpan tanpa angka.",
                                 required=True
                             ),
                             "Curah Hujan (mm)": st.column_config.NumberColumn(
@@ -1661,7 +1674,7 @@ if app_mode == "Curah Hujan":
                                 max_value=500.0,
                                 step=0.1,
                                 format="%.1f mm",
-                                help="Isi curah hujan harian (mm). Jika status RUSAK, nilai curah hujan otomatis diabaikan dan bernilai nol."
+                                help="Kosongkan jika belum diukur. Angka yang diisi dicatat sebagai pengukuran kecuali jika statusnya RUSAK."
                             )
                         },
                         key=f"editor_{bulk_stn}_{bulk_yr}_{bulk_m}"
@@ -1671,29 +1684,15 @@ if app_mode == "Curah Hujan":
                     with col_save1:
                         if st.button(f"💾 Simpan dari Grid ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})", type="primary", use_container_width=True, key="btn_save_grid"):
                             daily_items = []
-                            for _, r in edited_df.iterrows():
-                                stat_r = str(r.get("Status Alat", "Normal")).strip()
-                                is_rsk = (stat_r == "RUSAK")
-                                daily_items.append({
-                                    "Hari": int(r["Hari"]),
-                                    "Curah_Hujan": None if is_rsk else float(r.get("Curah Hujan (mm)", 0.0)),
-                                    "Status": "RUSAK" if is_rsk else "Normal"
-                                })
-                            new_df = save_bulk_monthly_records(
-                                df_main=df_raw,
-                                station=bulk_stn,
-                                year=int(bulk_yr),
-                                month=int(bulk_m),
-                                daily_items=daily_items
-                            )
-                            saved = persist_dataframe(new_df)
-                            if saved:
-                                st.cache_data.clear()
-                                gh_msg = handle_post_save_sync(f"input bulanan {days_in_month} hari Stasiun {bulk_stn} ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)})")
-                                st.success(f"✅ Data {days_in_month} hari untuk Stasiun {bulk_stn} ({MONTH_NAMES_ID[int(bulk_m)]} {int(bulk_yr)}) berhasil disimpan secara permanen!{gh_msg}")
-                                st.rerun()
-                            else:
-                                st.error("Gagal menyimpan data.")
+                            for i, r in edited_df.iterrows():
+                                status = r["Status Alat"]
+                                value = r["Curah Hujan (mm)"]
+                                # Selecting missing data explicitly clears an existing reading.
+                                if status == "Belum Ada Data" and df_grid.at[i, "Status Alat"] != status:
+                                    value = None
+                                value, status = rainfall_entry(value, status)
+                                daily_items.append({"Hari": int(r["Hari"]), "Curah_Hujan": value, "Status": status})
+                            persist_rainfall_month(daily_items)
 
         # Bagian Riwayat Input Manual
         with st.container(border=True):
@@ -1723,7 +1722,7 @@ if app_mode == "Curah Hujan":
             )
             secrets_obj = st.secrets if hasattr(st, "secrets") else None
             cfg_pwd = ""
-            if secrets_obj:
+            if secrets_obj is not None:
                 try:
                     cfg_pwd = secrets_obj.get("ADMIN_PASSWORD", "") or secrets_obj.get("admin_password", "")
                 except Exception:
